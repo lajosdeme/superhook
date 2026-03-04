@@ -5,6 +5,7 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 import {Hooks, IHooks} from "v4-core/libraries/Hooks.sol";
 import {ISubHookRegistry} from "./interfaces/ISubHookRegistry.sol";
 import {BaseHook} from "./external/BaseHook.sol";
+import {PoolHookConfig, ConflictStrategy} from "./types/PoolHookConfig.sol";
 
 /// @title SubHookRegistry
 /// @notice Manages the per-pool ordered list of sub-hooks and their configuration
@@ -12,7 +13,7 @@ import {BaseHook} from "./external/BaseHook.sol";
 ///         entry, an admin (set at initialization), a conflict resolution strategy,
 ///         and an optional immutability lock.
 /// @dev To be inherited by SuperHook.sol, not deployed standalone.
-contract SubHookRegistry is ISubHookRegistry {
+abstract contract SubHookRegistry is ISubHookRegistry {
     /// @dev Maximum number of sub-hooks per pool. Prevents unbounded iteration
     ///      and runaway gas costs.
     uint256 public constant MAX_SUB_HOOKS = 8;
