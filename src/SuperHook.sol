@@ -18,7 +18,6 @@ import {
 } from "v4-core/types/BeforeSwapDelta.sol";
 import {BaseHook} from "./external/BaseHook.sol";
 import {ConflictResolver} from "./ConflictResolver.sol";
-import {SubHookRegistry} from "./SubHookRegistry.sol";
 import {PoolHookConfig, ConflictStrategy} from "./types/PoolHookConfig.sol";
 import {
     BeforeSwapAccumulator,
@@ -411,12 +410,7 @@ contract SuperHook is BaseHook, ConflictResolver {
 
         return (
             BaseHook.afterAddLiquidity.selector,
-            BalanceDelta.wrap(
-                int256(
-                    (uint256(uint128(resolvedAmount0)) << 128) |
-                        uint256(uint128(resolvedAmount1))
-                )
-            )
+            _toBalanceDelta(resolvedAmount0, resolvedAmount1)
         );
     }
 
@@ -459,12 +453,7 @@ contract SuperHook is BaseHook, ConflictResolver {
 
         return (
             BaseHook.afterRemoveLiquidity.selector,
-            BalanceDelta.wrap(
-                int256(
-                    (uint256(uint128(resolvedAmount0)) << 128) |
-                        uint256(uint128(resolvedAmount1))
-                )
-            )
+            _toBalanceDelta(resolvedAmount0, resolvedAmount1)
         );
     }
 
@@ -606,5 +595,23 @@ contract SuperHook is BaseHook, ConflictResolver {
                 acc.deltaUnspecifieds[i] = hookDelta.amount1();
             }
         }
+    }
+
+    /// @dev Packs two int128 amounts into a BalanceDelta.
+    ///      uint128 casts are intentional — BalanceDelta stores raw bit patterns.
+    ///      Negative values are valid and expected (they mean tokens are owed).
+    function _toBalanceDelta(
+        int128 amount0,
+        int128 amount1
+    ) private pure returns (BalanceDelta) {
+        return
+            BalanceDelta.wrap(
+                int256(
+                    // forge-lint: disable-next-line(unsafe-typecast)
+                    (uint256(uint128(amount0)) << 128) |
+                        // forge-lint: disable-next-line(unsafe-typecast)
+                        uint256(uint128(amount1))
+                )
+            );
     }
 }

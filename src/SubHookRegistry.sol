@@ -30,20 +30,17 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     // -------------------------------------------------------------------------
 
     modifier onlyAdmin(PoolId poolId) {
-        if (_configs[poolId].admin != msg.sender)
-            revert NotAdmin(poolId, msg.sender);
+        _onlyAdmin(poolId);
         _;
     }
 
     modifier notLocked(PoolId poolId) {
-        if (_configs[poolId].locked) revert PoolIsLocked(poolId);
+        _notLocked(poolId);
         _;
     }
 
     modifier poolExists(PoolId poolId) {
-        // A registered pool always has a non-zero admin address.
-        if (_configs[poolId].admin == address(0))
-            revert PoolNotRegistered(poolId);
+        _poolExists(poolId);
         _;
     }
 
@@ -299,5 +296,20 @@ abstract contract SubHookRegistry is ISubHookRegistry {
             if (cfg.subHooks[i] == subHook) return i;
         }
         return type(uint256).max;
+    }
+
+    function _poolExists(PoolId poolId) internal view {
+        // A registered pool always has a non-zero admin address.
+        if (_configs[poolId].admin == address(0))
+            revert PoolNotRegistered(poolId);
+    }
+
+    function _notLocked(PoolId poolId) internal view {
+        if (_configs[poolId].locked) revert PoolIsLocked(poolId);
+    }
+
+    function _onlyAdmin(PoolId poolId) internal view {
+        if (_configs[poolId].admin != msg.sender)
+            revert NotAdmin(poolId, msg.sender);
     }
 }
