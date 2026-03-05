@@ -20,6 +20,11 @@ import {BaseHook} from "./external/BaseHook.sol";
 import {ConflictResolver} from "./ConflictResolver.sol";
 import {SubHookRegistry} from "./SubHookRegistry.sol";
 import {PoolHookConfig, ConflictStrategy} from "./types/PoolHookConfig.sol";
+import {
+    BeforeSwapAccumulator,
+    AfterSwapAccumulator,
+    LiquidityAccumulator
+} from "./types/Accumulators.sol";
 
 /// @title SuperHook
 /// @notice A singleton V4 hook that acts as an aggregator, allowing multiple
@@ -48,27 +53,6 @@ contract SuperHook is BaseHook, ConflictResolver {
     using PoolIdLibrary for PoolKey;
     using Hooks for IHooks;
     using BeforeSwapDeltaLibrary for BeforeSwapDelta;
-
-    // -------------------------------------------------------------------------
-    // Initialisation config — decoded from hookData in beforeInitialize
-    // -------------------------------------------------------------------------
-
-    /// @notice The pool deployer encodes this struct as hookData when calling
-    ///         PoolManager.initialize(). SuperHook decodes it in beforeInitialize
-    ///         to register the pool atomically with pool creation.
-    ///
-    /// @param strategy        Conflict resolution strategy for this pool.
-    /// @param customResolver  IConflictResolver address (required iff CUSTOM).
-    struct InitConfig {
-        ConflictStrategy strategy;
-        address customResolver;
-    }
-
-    // -------------------------------------------------------------------------
-    // Errors
-    // -------------------------------------------------------------------------
-
-    error HookDataTooShort();
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -325,25 +309,14 @@ contract SuperHook is BaseHook, ConflictResolver {
         bytes calldata hookData
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
         PoolId poolId = key.toId();
-        PoolHookConfig storage cfg = _getConfig(poolId);
 
-        uint256 n = cfg.subHooks.length;
-        int128[] memory deltaSpecifieds = new int128[](n);
-        int128[] memory deltaUnspecifieds = new int128[](n);
-        uint24[] memory lpFeeOverrides = new uint24[](n);
-
-        for (uint256 i; i < n; ++i) {
-            address subHook = cfg.subHooks[i];
-            if (IHooks(subHook).hasPermission(Hooks.BEFORE_SWAP_FLAG)) {
-                (bytes4 sel, BeforeSwapDelta bsd, uint24 fee) = IHooks(subHook)
-                    .beforeSwap(sender, key, params, hookData);
-
-                // Unpack BeforeSwapDelta into its two int128 components.
-                deltaSpecifieds[i] = bsd.getSpecifiedDelta();
-                deltaUnspecifieds[i] = bsd.getUnspecifiedDelta();
-                lpFeeOverrides[i] = fee;
-            }
-        }
+        BeforeSwapAccumulator memory acc = _collectBeforeSwap(
+            poolId,
+            sender,
+            key,
+            params,
+            hookData
+        );
 
         (
             int128 resolvedSpecified,
@@ -353,9 +326,9 @@ contract SuperHook is BaseHook, ConflictResolver {
                 poolId,
                 key,
                 params,
-                deltaSpecifieds,
-                deltaUnspecifieds,
-                lpFeeOverrides
+                acc.deltaSpecifieds,
+                acc.deltaUnspecifieds,
+                acc.lpFeeOverrides
             );
 
         return (
@@ -377,36 +350,23 @@ contract SuperHook is BaseHook, ConflictResolver {
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
         PoolId poolId = key.toId();
-        PoolHookConfig storage cfg = _getConfig(poolId);
 
-        uint256 n = cfg.subHooks.length;
-        int128[] memory deltaSpecifieds = new int128[](n);
-        int128[] memory deltaUnspecifieds = new int128[](n);
-
-        for (uint256 i; i < n; ++i) {
-            address subHook = cfg.subHooks[i];
-            if (IHooks(subHook).hasPermission(Hooks.AFTER_SWAP_FLAG)) {
-                (bytes4 sel, int128 hookDelta) = IHooks(subHook).afterSwap(
-                    sender,
-                    key,
-                    params,
-                    swapDelta,
-                    hookData
-                );
-
-                // afterSwap returns a single int128 (hookDeltaUnspecified).
-                // Store it in the unspecified slot; specified stays zero.
-                deltaUnspecifieds[i] = hookDelta;
-            }
-        }
+        AfterSwapAccumulator memory acc = _collectAfterSwap(
+            poolId,
+            sender,
+            key,
+            params,
+            swapDelta,
+            hookData
+        );
 
         (, int128 resolvedUnspecified) = _resolveAfterSwap(
             poolId,
             key,
             params,
             swapDelta,
-            deltaSpecifieds,
-            deltaUnspecifieds
+            acc.deltaSpecifieds,
+            acc.deltaUnspecifieds
         );
 
         return (BaseHook.afterSwap.selector, resolvedUnspecified);
@@ -425,29 +385,16 @@ contract SuperHook is BaseHook, ConflictResolver {
         bytes calldata hookData
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId poolId = key.toId();
-        PoolHookConfig storage cfg = _getConfig(poolId);
 
-        uint256 n = cfg.subHooks.length;
-        int128[] memory deltaSpecifieds = new int128[](n);
-        int128[] memory deltaUnspecifieds = new int128[](n);
-
-        for (uint256 i; i < n; ++i) {
-            address subHook = cfg.subHooks[i];
-            if (IHooks(subHook).hasPermission(Hooks.AFTER_ADD_LIQUIDITY_FLAG)) {
-                (bytes4 sel, BalanceDelta hookDelta) = IHooks(subHook)
-                    .afterAddLiquidity(
-                        sender,
-                        key,
-                        params,
-                        delta,
-                        feesAccrued,
-                        hookData
-                    );
-
-                deltaSpecifieds[i] = hookDelta.amount0();
-                deltaUnspecifieds[i] = hookDelta.amount1();
-            }
-        }
+        LiquidityAccumulator memory acc = _collectAfterAddLiquidity(
+            poolId,
+            sender,
+            key,
+            params,
+            delta,
+            feesAccrued,
+            hookData
+        );
 
         (
             int128 resolvedAmount0,
@@ -458,8 +405,8 @@ contract SuperHook is BaseHook, ConflictResolver {
                 params,
                 delta,
                 feesAccrued,
-                deltaSpecifieds,
-                deltaUnspecifieds
+                acc.deltaSpecifieds,
+                acc.deltaUnspecifieds
             );
 
         return (
@@ -486,31 +433,16 @@ contract SuperHook is BaseHook, ConflictResolver {
         bytes calldata hookData
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId poolId = key.toId();
-        PoolHookConfig storage cfg = _getConfig(poolId);
 
-        uint256 n = cfg.subHooks.length;
-        int128[] memory deltaSpecifieds = new int128[](n);
-        int128[] memory deltaUnspecifieds = new int128[](n);
-
-        for (uint256 i; i < n; ++i) {
-            address subHook = cfg.subHooks[i];
-            if (
-                IHooks(subHook).hasPermission(Hooks.AFTER_REMOVE_LIQUIDITY_FLAG)
-            ) {
-                (bytes4 sel, BalanceDelta hookDelta) = IHooks(subHook)
-                    .afterRemoveLiquidity(
-                        sender,
-                        key,
-                        params,
-                        delta,
-                        feesAccrued,
-                        hookData
-                    );
-
-                deltaSpecifieds[i] = hookDelta.amount0();
-                deltaUnspecifieds[i] = hookDelta.amount1();
-            }
-        }
+        LiquidityAccumulator memory acc = _collectAfterRemoveLiquidity(
+            poolId,
+            sender,
+            key,
+            params,
+            delta,
+            feesAccrued,
+            hookData
+        );
 
         (
             int128 resolvedAmount0,
@@ -521,8 +453,8 @@ contract SuperHook is BaseHook, ConflictResolver {
                 params,
                 delta,
                 feesAccrued,
-                deltaSpecifieds,
-                deltaUnspecifieds
+                acc.deltaSpecifieds,
+                acc.deltaUnspecifieds
             );
 
         return (
@@ -534,5 +466,145 @@ contract SuperHook is BaseHook, ConflictResolver {
                 )
             )
         );
+    }
+
+    // =========================================================================
+    // Collectors
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // _collectBeforeSwap
+    // -------------------------------------------------------------------------
+    function _collectBeforeSwap(
+        PoolId poolId,
+        address sender,
+        PoolKey calldata key,
+        SwapParams calldata params,
+        bytes calldata hookData
+    ) private returns (BeforeSwapAccumulator memory acc) {
+        PoolHookConfig storage cfg = _getConfig(poolId);
+        uint256 n = cfg.subHooks.length;
+
+        acc.deltaSpecifieds = new int128[](n);
+        acc.deltaUnspecifieds = new int128[](n);
+        acc.lpFeeOverrides = new uint24[](n);
+
+        for (uint256 i; i < n; ++i) {
+            address subHook = cfg.subHooks[i];
+            if (IHooks(subHook).hasPermission(Hooks.BEFORE_SWAP_FLAG)) {
+                (, BeforeSwapDelta bsd, uint24 fee) = IHooks(subHook)
+                    .beforeSwap(sender, key, params, hookData);
+                acc.deltaSpecifieds[i] = bsd.getSpecifiedDelta();
+                acc.deltaUnspecifieds[i] = bsd.getUnspecifiedDelta();
+                acc.lpFeeOverrides[i] = fee;
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // _collectAfterSwap
+    // -------------------------------------------------------------------------
+    function _collectAfterSwap(
+        PoolId poolId,
+        address sender,
+        PoolKey calldata key,
+        SwapParams calldata params,
+        BalanceDelta swapDelta,
+        bytes calldata hookData
+    ) private returns (AfterSwapAccumulator memory acc) {
+        PoolHookConfig storage cfg = _getConfig(poolId);
+        uint256 n = cfg.subHooks.length;
+
+        acc.deltaSpecifieds = new int128[](n);
+        acc.deltaUnspecifieds = new int128[](n);
+
+        for (uint256 i; i < n; ++i) {
+            address subHook = cfg.subHooks[i];
+            if (IHooks(subHook).hasPermission(Hooks.AFTER_SWAP_FLAG)) {
+                (, int128 hookDelta) = IHooks(subHook).afterSwap(
+                    sender,
+                    key,
+                    params,
+                    swapDelta,
+                    hookData
+                );
+                // afterSwap returns a single int128 (hookDeltaUnspecified).
+                // deltaSpecifieds[i] stays zero.
+                acc.deltaUnspecifieds[i] = hookDelta;
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // _collectAfterAddLiquidity
+    // -------------------------------------------------------------------------
+    function _collectAfterAddLiquidity(
+        PoolId poolId,
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued,
+        bytes calldata hookData
+    ) private returns (LiquidityAccumulator memory acc) {
+        PoolHookConfig storage cfg = _getConfig(poolId);
+        uint256 n = cfg.subHooks.length;
+
+        acc.deltaSpecifieds = new int128[](n);
+        acc.deltaUnspecifieds = new int128[](n);
+
+        for (uint256 i; i < n; ++i) {
+            address subHook = cfg.subHooks[i];
+            if (IHooks(subHook).hasPermission(Hooks.AFTER_ADD_LIQUIDITY_FLAG)) {
+                (, BalanceDelta hookDelta) = IHooks(subHook).afterAddLiquidity(
+                    sender,
+                    key,
+                    params,
+                    delta,
+                    feesAccrued,
+                    hookData
+                );
+                acc.deltaSpecifieds[i] = hookDelta.amount0();
+                acc.deltaUnspecifieds[i] = hookDelta.amount1();
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // _collectAfterRemoveLiquidity
+    // -------------------------------------------------------------------------
+    function _collectAfterRemoveLiquidity(
+        PoolId poolId,
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        BalanceDelta feesAccrued,
+        bytes calldata hookData
+    ) private returns (LiquidityAccumulator memory acc) {
+        PoolHookConfig storage cfg = _getConfig(poolId);
+        uint256 n = cfg.subHooks.length;
+
+        acc.deltaSpecifieds = new int128[](n);
+        acc.deltaUnspecifieds = new int128[](n);
+
+        for (uint256 i; i < n; ++i) {
+            address subHook = cfg.subHooks[i];
+            if (
+                IHooks(subHook).hasPermission(Hooks.AFTER_REMOVE_LIQUIDITY_FLAG)
+            ) {
+                (, BalanceDelta hookDelta) = IHooks(subHook)
+                    .afterRemoveLiquidity(
+                        sender,
+                        key,
+                        params,
+                        delta,
+                        feesAccrued,
+                        hookData
+                    );
+                acc.deltaSpecifieds[i] = hookDelta.amount0();
+                acc.deltaUnspecifieds[i] = hookDelta.amount1();
+            }
+        }
     }
 }
