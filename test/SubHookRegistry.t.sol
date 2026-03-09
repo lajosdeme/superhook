@@ -169,6 +169,7 @@ contract SubHookRegistryAddSubHookTest is SubHookRegistryTest {
     }
 
     function test_revertWhenMaxSubHooksReached() public {
+        vm.pauseGasMetering();
         MockSubHook[8] memory hooks;
         for (uint256 i = 0; i < 8; ++i) {
             hooks[i] = _deployMockSubHook(manager);
