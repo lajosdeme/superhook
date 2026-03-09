@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.33;
+pragma solidity ^0.8.24;
 
 /// @notice The available conflict-resolution strategies for a pool.
 /// @dev CUSTOM requires the pool deployer to supply an IConflictResolver address.
