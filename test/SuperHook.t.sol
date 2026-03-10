@@ -23,13 +23,7 @@ abstract contract SuperHookTest is Test, Deployers {
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
         superHook = new SuperHook(manager);
-        poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            hooks: superHook,
-            fee: 3000,
-            tickSpacing: 60
-        });
+        poolKey = PoolKey({currency0: currency0, currency1: currency1, hooks: superHook, fee: 3000, tickSpacing: 60});
         poolId = poolKey.toId();
     }
 }

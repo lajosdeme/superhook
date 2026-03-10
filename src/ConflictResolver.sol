@@ -3,10 +3,7 @@ pragma solidity ^0.8.24;
 
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
-import {
-    SwapParams,
-    ModifyLiquidityParams
-} from "v4-core/types/PoolOperation.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {IConflictResolver} from "./interfaces/IConflictResolver.sol";
 import {ConflictStrategy} from "./types/PoolHookConfig.sol";
@@ -74,61 +71,23 @@ abstract contract ConflictResolver is SubHookRegistry {
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
-    )
-        internal
-        view
-        returns (
-            int128 deltaSpecified,
-            int128 deltaUnspecified,
-            uint24 lpFeeOverride
-        )
-    {
+    ) internal view returns (int128 deltaSpecified, int128 deltaUnspecified, uint24 lpFeeOverride) {
         ConflictStrategy strategy = _getConfig(poolId).strategy;
 
         if (strategy == ConflictStrategy.FIRST_WINS) {
-            (
-                deltaSpecified,
-                deltaUnspecified,
-                lpFeeOverride
-            ) = _firstWinsBeforeSwap(
-                    deltaSpecifieds,
-                    deltaUnspecifieds,
-                    lpFeeOverrides
-                );
+            (deltaSpecified, deltaUnspecified, lpFeeOverride) =
+                _firstWinsBeforeSwap(deltaSpecifieds, deltaUnspecifieds, lpFeeOverrides);
         } else if (strategy == ConflictStrategy.LAST_WINS) {
-            (
-                deltaSpecified,
-                deltaUnspecified,
-                lpFeeOverride
-            ) = _lastWinsBeforeSwap(
-                    deltaSpecifieds,
-                    deltaUnspecifieds,
-                    lpFeeOverrides
-                );
+            (deltaSpecified, deltaUnspecified, lpFeeOverride) =
+                _lastWinsBeforeSwap(deltaSpecifieds, deltaUnspecifieds, lpFeeOverrides);
         } else if (strategy == ConflictStrategy.ADDITIVE) {
-            (
-                deltaSpecified,
-                deltaUnspecified,
-                lpFeeOverride
-            ) = _additiveBeforeSwap(
-                    deltaSpecifieds,
-                    deltaUnspecifieds,
-                    lpFeeOverrides
-                );
+            (deltaSpecified, deltaUnspecified, lpFeeOverride) =
+                _additiveBeforeSwap(deltaSpecifieds, deltaUnspecifieds, lpFeeOverrides);
         } else {
             // CUSTOM — delegate to the pool's registered IConflictResolver.
             address resolver = _getConfig(poolId).customResolver;
-            (
-                deltaSpecified,
-                deltaUnspecified,
-                lpFeeOverride
-            ) = IConflictResolver(resolver).resolveBeforeSwap(
-                    key,
-                    params,
-                    deltaSpecifieds,
-                    deltaUnspecifieds,
-                    lpFeeOverrides
-                );
+            (deltaSpecified, deltaUnspecified, lpFeeOverride) = IConflictResolver(resolver)
+                .resolveBeforeSwap(key, params, deltaSpecifieds, deltaUnspecifieds, lpFeeOverrides);
         }
     }
 
@@ -148,30 +107,15 @@ abstract contract ConflictResolver is SubHookRegistry {
         ConflictStrategy strategy = _getConfig(poolId).strategy;
 
         if (strategy == ConflictStrategy.FIRST_WINS) {
-            (deltaSpecified, deltaUnspecified) = _firstWins(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _firstWins(deltaSpecifieds, deltaUnspecifieds);
         } else if (strategy == ConflictStrategy.LAST_WINS) {
-            (deltaSpecified, deltaUnspecified) = _lastWins(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _lastWins(deltaSpecifieds, deltaUnspecifieds);
         } else if (strategy == ConflictStrategy.ADDITIVE) {
-            (deltaSpecified, deltaUnspecified) = _additive(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _additive(deltaSpecifieds, deltaUnspecifieds);
         } else {
             address resolver = _getConfig(poolId).customResolver;
             (deltaSpecified, deltaUnspecified) = IConflictResolver(resolver)
-                .resolveAfterSwap(
-                    key,
-                    params,
-                    swapDelta,
-                    deltaSpecifieds,
-                    deltaUnspecifieds
-                );
+                .resolveAfterSwap(key, params, swapDelta, deltaSpecifieds, deltaUnspecifieds);
         }
     }
 
@@ -192,31 +136,15 @@ abstract contract ConflictResolver is SubHookRegistry {
         ConflictStrategy strategy = _getConfig(poolId).strategy;
 
         if (strategy == ConflictStrategy.FIRST_WINS) {
-            (deltaSpecified, deltaUnspecified) = _firstWins(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _firstWins(deltaSpecifieds, deltaUnspecifieds);
         } else if (strategy == ConflictStrategy.LAST_WINS) {
-            (deltaSpecified, deltaUnspecified) = _lastWins(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _lastWins(deltaSpecifieds, deltaUnspecifieds);
         } else if (strategy == ConflictStrategy.ADDITIVE) {
-            (deltaSpecified, deltaUnspecified) = _additive(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _additive(deltaSpecifieds, deltaUnspecifieds);
         } else {
             address resolver = _getConfig(poolId).customResolver;
             (deltaSpecified, deltaUnspecified) = IConflictResolver(resolver)
-                .resolveAfterAddLiquidity(
-                    key,
-                    params,
-                    delta,
-                    feesAccrued,
-                    deltaSpecifieds,
-                    deltaUnspecifieds
-                );
+                .resolveAfterAddLiquidity(key, params, delta, feesAccrued, deltaSpecifieds, deltaUnspecifieds);
         }
     }
 
@@ -237,31 +165,15 @@ abstract contract ConflictResolver is SubHookRegistry {
         ConflictStrategy strategy = _getConfig(poolId).strategy;
 
         if (strategy == ConflictStrategy.FIRST_WINS) {
-            (deltaSpecified, deltaUnspecified) = _firstWins(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _firstWins(deltaSpecifieds, deltaUnspecifieds);
         } else if (strategy == ConflictStrategy.LAST_WINS) {
-            (deltaSpecified, deltaUnspecified) = _lastWins(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _lastWins(deltaSpecifieds, deltaUnspecifieds);
         } else if (strategy == ConflictStrategy.ADDITIVE) {
-            (deltaSpecified, deltaUnspecified) = _additive(
-                deltaSpecifieds,
-                deltaUnspecifieds
-            );
+            (deltaSpecified, deltaUnspecified) = _additive(deltaSpecifieds, deltaUnspecifieds);
         } else {
             address resolver = _getConfig(poolId).customResolver;
             (deltaSpecified, deltaUnspecified) = IConflictResolver(resolver)
-                .resolveAfterRemoveLiquidity(
-                    key,
-                    params,
-                    delta,
-                    feesAccrued,
-                    deltaSpecifieds,
-                    deltaUnspecifieds
-                );
+                .resolveAfterRemoveLiquidity(key, params, delta, feesAccrued, deltaSpecifieds, deltaUnspecifieds);
         }
     }
 
@@ -273,10 +185,11 @@ abstract contract ConflictResolver is SubHookRegistry {
     ///      A sub-hook that returns (0, 0) is treated as "no opinion" and skipped,
     ///      allowing the next sub-hook's values to be considered.
     ///      All sub-hooks still execute — only the winning values differ.
-    function _firstWins(
-        int128[] memory deltaSpecifieds,
-        int128[] memory deltaUnspecifieds
-    ) private pure returns (int128 deltaSpecified, int128 deltaUnspecified) {
+    function _firstWins(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
+        internal
+        pure
+        returns (int128 deltaSpecified, int128 deltaUnspecified)
+    {
         for (uint256 i; i < deltaSpecifieds.length; ++i) {
             if (deltaSpecifieds[i] != 0 || deltaUnspecifieds[i] != 0) {
                 return (deltaSpecifieds[i], deltaUnspecifieds[i]);
@@ -287,10 +200,11 @@ abstract contract ConflictResolver is SubHookRegistry {
 
     /// @dev LAST_WINS: use the last sub-hook that returned a non-zero delta pair.
     ///      Iterates the full list; each non-zero result overwrites the previous.
-    function _lastWins(
-        int128[] memory deltaSpecifieds,
-        int128[] memory deltaUnspecifieds
-    ) private pure returns (int128 deltaSpecified, int128 deltaUnspecified) {
+    function _lastWins(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
+        internal
+        pure
+        returns (int128 deltaSpecified, int128 deltaUnspecified)
+    {
         for (uint256 i; i < deltaSpecifieds.length; ++i) {
             if (deltaSpecifieds[i] != 0 || deltaUnspecifieds[i] != 0) {
                 deltaSpecified = deltaSpecifieds[i];
@@ -302,10 +216,11 @@ abstract contract ConflictResolver is SubHookRegistry {
     /// @dev ADDITIVE: sum all sub-hook deltas.
     ///      Reverts on int128 overflow — the pool deployer is responsible for
     ///      ensuring their sub-hook combination cannot produce out-of-range sums.
-    function _additive(
-        int128[] memory deltaSpecifieds,
-        int128[] memory deltaUnspecifieds
-    ) private pure returns (int128 deltaSpecified, int128 deltaUnspecified) {
+    function _additive(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
+        internal
+        pure
+        returns (int128 deltaSpecified, int128 deltaUnspecified)
+    {
         int256 accSpecified;
         int256 accUnspecified;
 
@@ -315,15 +230,10 @@ abstract contract ConflictResolver is SubHookRegistry {
         }
 
         // Revert if the accumulated value exceeds int128 range.
-        if (
-            accSpecified > type(int128).max || accSpecified < type(int128).min
-        ) {
+        if (accSpecified > type(int128).max || accSpecified < type(int128).min) {
             revert AdditiveOverflow();
         }
-        if (
-            accUnspecified > type(int128).max ||
-            accUnspecified < type(int128).min
-        ) {
+        if (accUnspecified > type(int128).max || accUnspecified < type(int128).min) {
             revert AdditiveOverflow();
         }
 
@@ -346,23 +256,12 @@ abstract contract ConflictResolver is SubHookRegistry {
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
-    )
-        private
-        pure
-        returns (
-            int128 deltaSpecified,
-            int128 deltaUnspecified,
-            uint24 lpFeeOverride
-        )
-    {
+    ) internal pure returns (int128 deltaSpecified, int128 deltaUnspecified, uint24 lpFeeOverride) {
         bool deltaResolved;
         bool feeResolved;
 
         for (uint256 i; i < deltaSpecifieds.length; ++i) {
-            if (
-                !deltaResolved &&
-                (deltaSpecifieds[i] != 0 || deltaUnspecifieds[i] != 0)
-            ) {
+            if (!deltaResolved && (deltaSpecifieds[i] != 0 || deltaUnspecifieds[i] != 0)) {
                 deltaSpecified = deltaSpecifieds[i];
                 deltaUnspecified = deltaUnspecifieds[i];
                 deltaResolved = true;
@@ -380,15 +279,7 @@ abstract contract ConflictResolver is SubHookRegistry {
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
-    )
-        private
-        pure
-        returns (
-            int128 deltaSpecified,
-            int128 deltaUnspecified,
-            uint24 lpFeeOverride
-        )
-    {
+    ) internal pure returns (int128 deltaSpecified, int128 deltaUnspecified, uint24 lpFeeOverride) {
         for (uint256 i; i < deltaSpecifieds.length; ++i) {
             if (deltaSpecifieds[i] != 0 || deltaUnspecifieds[i] != 0) {
                 deltaSpecified = deltaSpecifieds[i];
@@ -406,20 +297,9 @@ abstract contract ConflictResolver is SubHookRegistry {
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
-    )
-        private
-        pure
-        returns (
-            int128 deltaSpecified,
-            int128 deltaUnspecified,
-            uint24 lpFeeOverride
-        )
-    {
+    ) internal pure returns (int128 deltaSpecified, int128 deltaUnspecified, uint24 lpFeeOverride) {
         // Reuse shared delta accumulator for deltaSpecified / deltaUnspecified.
-        (deltaSpecified, deltaUnspecified) = _additive(
-            deltaSpecifieds,
-            deltaUnspecifieds
-        );
+        (deltaSpecified, deltaUnspecified) = _additive(deltaSpecifieds, deltaUnspecifieds);
 
         // Accumulate fees in uint256 to detect overflow before casting.
         uint256 feeAcc;

@@ -10,17 +10,10 @@ interface ISubHookRegistry {
     // -------------------------------------------------------------------------
 
     event PoolRegistered(
-        PoolId indexed poolId,
-        address indexed admin,
-        ConflictStrategy strategy,
-        address customResolver
+        PoolId indexed poolId, address indexed admin, ConflictStrategy strategy, address customResolver
     );
 
-    event SubHookAdded(
-        PoolId indexed poolId,
-        address indexed subHook,
-        uint256 insertIndex
-    );
+    event SubHookAdded(PoolId indexed poolId, address indexed subHook, uint256 insertIndex);
 
     event SubHookRemoved(PoolId indexed poolId, address indexed subHook);
 
@@ -28,17 +21,9 @@ interface ISubHookRegistry {
 
     event PoolLocked(PoolId indexed poolId);
 
-    event AdminTransferred(
-        PoolId indexed poolId,
-        address indexed previousAdmin,
-        address indexed newAdmin
-    );
+    event AdminTransferred(PoolId indexed poolId, address indexed previousAdmin, address indexed newAdmin);
 
-    event StrategyUpdated(
-        PoolId indexed poolId,
-        ConflictStrategy newStrategy,
-        address newCustomResolver
-    );
+    event StrategyUpdated(PoolId indexed poolId, ConflictStrategy newStrategy, address newCustomResolver);
 
     // -------------------------------------------------------------------------
     // Errors
@@ -64,18 +49,11 @@ interface ISubHookRegistry {
     // -------------------------------------------------------------------------
     // Functions
     // -------------------------------------------------------------------------
-    function addSubHook(
-        PoolId poolId,
-        address subHook,
-        uint256 insertIndex
-    ) external;
+    function addSubHook(PoolId poolId, address subHook, uint256 insertIndex) external;
 
     function removeSubHook(PoolId poolId, address subHook) external;
 
-    function reorderSubHooks(
-        PoolId poolId,
-        address[] calldata newOrder
-    ) external;
+    function reorderSubHooks(PoolId poolId, address[] calldata newOrder) external;
 
     function lockPool(PoolId poolId) external;
 }

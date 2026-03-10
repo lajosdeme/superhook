@@ -15,7 +15,11 @@ library HookMiner {
         revert("No valid salt found");
     }
 
-    function findSaltWithOffset(address deployer, bytes memory initCode, uint256 offset) internal pure returns (uint256 salt) {
+    function findSaltWithOffset(address deployer, bytes memory initCode, uint256 offset)
+        internal
+        pure
+        returns (uint256 salt)
+    {
         bytes32 initCodeHash = keccak256(initCode);
         for (uint256 i = offset; i < type(uint256).max; ++i) {
             address predicted = computeCreate2Address(i, initCodeHash, deployer);

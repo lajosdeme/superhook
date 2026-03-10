@@ -6,10 +6,7 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
-import {
-    ModifyLiquidityParams,
-    SwapParams
-} from "v4-core/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 
 import {BaseSubHook} from "../../src/external/BaseSubHook.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -47,10 +44,7 @@ contract MockSubHook is BaseSubHook {
     uint256 public beforeDonateCount;
     uint256 public afterDonateCount;
 
-    constructor(
-        IPoolManager _manager,
-        address _superHook
-    ) BaseSubHook(_manager, _superHook) {}
+    constructor(IPoolManager _manager, address _superHook) BaseSubHook(_manager, _superHook) {}
 
     function setPermissions(
         bool _beforeInitialize,
@@ -76,11 +70,7 @@ contract MockSubHook is BaseSubHook {
         afterDonateEnabled = _afterDonate;
     }
 
-    function setBeforeSwapResult(
-        int128 deltaSpecified,
-        int128 deltaUnspecified,
-        uint24 feeOverride
-    ) external {
+    function setBeforeSwapResult(int128 deltaSpecified, int128 deltaUnspecified, uint24 feeOverride) external {
         beforeSwapDeltaSpecified = deltaSpecified;
         beforeSwapDeltaUnspecified = deltaUnspecified;
         beforeSwapFeeOverride = feeOverride;
@@ -97,56 +87,40 @@ contract MockSubHook is BaseSubHook {
         afterRemoveLiquidityDelta1 = delta1;
     }
 
-    function getHookPermissions()
-        public
-        pure
-        override
-        returns (Hooks.Permissions memory)
-    {
-        return
-            Hooks.Permissions({
-                beforeInitialize: true,
-                afterInitialize: true,
-                beforeAddLiquidity: true,
-                afterAddLiquidity: true,
-                beforeRemoveLiquidity: true,
-                afterRemoveLiquidity: true,
-                beforeSwap: true,
-                afterSwap: true,
-                beforeDonate: true,
-                afterDonate: true,
-                beforeSwapReturnDelta: true,
-                afterSwapReturnDelta: true,
-                afterAddLiquidityReturnDelta: true,
-                afterRemoveLiquidityReturnDelta: true
-            });
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
+        return Hooks.Permissions({
+            beforeInitialize: true,
+            afterInitialize: true,
+            beforeAddLiquidity: true,
+            afterAddLiquidity: true,
+            beforeRemoveLiquidity: true,
+            afterRemoveLiquidity: true,
+            beforeSwap: true,
+            afterSwap: true,
+            beforeDonate: true,
+            afterDonate: true,
+            beforeSwapReturnDelta: true,
+            afterSwapReturnDelta: true,
+            afterAddLiquidityReturnDelta: true,
+            afterRemoveLiquidityReturnDelta: true
+        });
     }
 
-    function _beforeInitialize(
-        address,
-        PoolKey calldata,
-        uint160
-    ) internal override returns (bytes4) {
+    function _beforeInitialize(address, PoolKey calldata, uint160) internal override returns (bytes4) {
         beforeInitializeCount++;
         return BaseSubHook.beforeInitialize.selector;
     }
 
-    function _afterInitialize(
-        address,
-        PoolKey calldata,
-        uint160,
-        int24
-    ) internal override returns (bytes4) {
+    function _afterInitialize(address, PoolKey calldata, uint160, int24) internal override returns (bytes4) {
         afterInitializeCount++;
         return BaseSubHook.afterInitialize.selector;
     }
 
-    function _beforeAddLiquidity(
-        address,
-        PoolKey calldata,
-        ModifyLiquidityParams calldata,
-        bytes calldata
-    ) internal override returns (bytes4) {
+    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
         beforeAddLiquidityCount++;
         return BaseSubHook.beforeAddLiquidity.selector;
     }
@@ -163,20 +137,16 @@ contract MockSubHook is BaseSubHook {
         return (
             IHooks.afterAddLiquidity.selector,
             BalanceDelta.wrap(
-                int256(
-                    (uint256(uint128(afterAddLiquidityDelta0)) << 128) |
-                        uint256(uint128(afterAddLiquidityDelta1))
-                )
+                int256((uint256(uint128(afterAddLiquidityDelta0)) << 128) | uint256(uint128(afterAddLiquidityDelta1)))
             )
         );
     }
 
-    function _beforeRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        ModifyLiquidityParams calldata,
-        bytes calldata
-    ) internal override returns (bytes4) {
+    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
         beforeRemoveLiquidityCount++;
         return BaseSubHook.beforeRemoveLiquidity.selector;
     }
@@ -195,7 +165,7 @@ contract MockSubHook is BaseSubHook {
             BalanceDelta.wrap(
                 int256(
                     // forge-lint: disable-next-line(unsafe-typecast)
-                    (uint256(uint128(afterRemoveLiquidityDelta0)) << 128) |
+                    (uint256(uint128(afterRemoveLiquidityDelta0)) << 128) | 
                         // forge-lint: disable-next-line(unsafe-typecast)
                         uint256(uint128(afterRemoveLiquidityDelta1))
                 )
@@ -203,19 +173,18 @@ contract MockSubHook is BaseSubHook {
         );
     }
 
-    function _beforeSwap(
-        address,
-        PoolKey calldata,
-        SwapParams calldata,
-        bytes calldata
-    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address, PoolKey calldata, SwapParams calldata, bytes calldata)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
         beforeSwapCount++;
         return (
             BaseSubHook.beforeSwap.selector,
             BeforeSwapDelta.wrap(
                 int256(
                     // forge-lint: disable-next-line(unsafe-typecast)
-                    (uint256(uint128(beforeSwapDeltaSpecified)) << 128) |
+                    (uint256(uint128(beforeSwapDeltaSpecified)) << 128) | 
                         // forge-lint: disable-next-line(unsafe-typecast)
                         uint256(uint128(beforeSwapDeltaUnspecified))
                 )
@@ -224,35 +193,29 @@ contract MockSubHook is BaseSubHook {
         );
     }
 
-    function _afterSwap(
-        address,
-        PoolKey calldata,
-        SwapParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) internal override returns (bytes4, int128) {
+    function _afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
+        internal
+        override
+        returns (bytes4, int128)
+    {
         afterSwapCount++;
         return (BaseSubHook.afterSwap.selector, afterSwapDelta);
     }
 
-    function _beforeDonate(
-        address,
-        PoolKey calldata,
-        uint256,
-        uint256,
-        bytes calldata
-    ) internal override returns (bytes4) {
+    function _beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
         beforeDonateCount++;
         return BaseSubHook.beforeDonate.selector;
     }
 
-    function _afterDonate(
-        address,
-        PoolKey calldata,
-        uint256,
-        uint256,
-        bytes calldata
-    ) internal override returns (bytes4) {
+    function _afterDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
+        internal
+        override
+        returns (bytes4)
+    {
         afterDonateCount++;
         return BaseSubHook.afterDonate.selector;
     }

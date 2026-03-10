@@ -3,9 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
-import {
-    PoolModifyLiquidityTest
-} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
+import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
@@ -24,17 +22,8 @@ import {MockSubHook} from "./mocks/MockSubHook.sol";
 
 import {HookMiner} from "./HookMiner.sol";
 
-event PoolRegistered(
-    PoolId indexed poolId,
-    address indexed admin,
-    uint8 strategy,
-    address customResolver
-);
-event SubHookAdded(
-    PoolId indexed poolId,
-    address indexed subHook,
-    uint256 insertIndex
-);
+event PoolRegistered(PoolId indexed poolId, address indexed admin, uint8 strategy, address customResolver);
+event SubHookAdded(PoolId indexed poolId, address indexed subHook, uint256 insertIndex);
 
 abstract contract SuperHookCallbackTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
@@ -55,18 +44,9 @@ abstract contract SuperHookCallbackTest is Test, Deployers {
         poolCurrency1 = currency1;
 
         superHook = _deploySuperHook(manager);
-        mockSubHook = _deployMockSubHook(
-            IPoolManager(manager),
-            address(superHook)
-        );
+        mockSubHook = _deployMockSubHook(IPoolManager(manager), address(superHook));
 
-        poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            hooks: superHook,
-            fee: 3000,
-            tickSpacing: 60
-        });
+        poolKey = PoolKey({currency0: currency0, currency1: currency1, hooks: superHook, fee: 3000, tickSpacing: 60});
         poolId = poolKey.toId();
 
         manager.initialize(poolKey, SQRT_PRICE_1_1);
@@ -74,23 +54,14 @@ abstract contract SuperHookCallbackTest is Test, Deployers {
         superHook.addSubHook(poolId, address(mockSubHook), 0);
     }
 
-    function _deploySuperHook(
-        IPoolManager poolManager
-    ) internal returns (SuperHook) {
+    function _deploySuperHook(IPoolManager poolManager) internal returns (SuperHook) {
         bytes memory creationCode = type(SuperHook).creationCode;
-        bytes memory initCode = abi.encodePacked(
-            creationCode,
-            abi.encode(address(poolManager))
-        );
+        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(address(poolManager)));
 
         uint256 salt = HookMiner.findSalt(address(this), initCode);
         bytes32 initCodeHash = keccak256(initCode);
 
-        address hookAddr = HookMiner.computeCreate2Address(
-            salt,
-            initCodeHash,
-            address(this)
-        );
+        address hookAddr = HookMiner.computeCreate2Address(salt, initCodeHash, address(this));
 
         assembly {
             let ret := create2(0, add(initCode, 0x20), mload(initCode), salt)
@@ -103,25 +74,15 @@ abstract contract SuperHookCallbackTest is Test, Deployers {
         return hook;
     }
 
-    function _deployMockSubHook(
-        IPoolManager poolManager,
-        address _superHook
-    ) internal returns (MockSubHook) {
+    function _deployMockSubHook(IPoolManager poolManager, address _superHook) internal returns (MockSubHook) {
         bytes memory creationCode = type(MockSubHook).creationCode;
-        bytes memory initCode = abi.encodePacked(
-            creationCode,
-            abi.encode(address(poolManager), _superHook, mockNonce)
-        );
+        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(address(poolManager), _superHook, mockNonce));
         mockNonce++;
 
         uint256 salt = HookMiner.findSalt(address(this), initCode);
         bytes32 initCodeHash = keccak256(initCode);
 
-        address hookAddr = HookMiner.computeCreate2Address(
-            salt,
-            initCodeHash,
-            address(this)
-        );
+        address hookAddr = HookMiner.computeCreate2Address(salt, initCodeHash, address(this));
 
         assembly {
             let ret := create2(0, add(initCode, 0x20), mload(initCode), salt)
@@ -140,11 +101,7 @@ abstract contract SuperHookCallbackTest is Test, Deployers {
         superHook.addSubHook(poolId, address(subHook), 0);
 
         PoolKey memory newKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            hooks: superHook,
-            fee: uint24(uniqueFee),
-            tickSpacing: 60
+            currency0: currency0, currency1: currency1, hooks: superHook, fee: uint24(uniqueFee), tickSpacing: 60
         });
         manager.initialize(newKey, SQRT_PRICE_1_1);
     }
@@ -164,11 +121,7 @@ contract SuperHookLiquidityTest is SuperHookCallbackTest {
     function test_beforeAddLiquidityDispatched() public {
         assertEq(mockSubHook.beforeAddLiquidityCount(), 0);
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
-            poolKey,
-            LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.beforeAddLiquidityCount(), 1);
     }
@@ -176,47 +129,27 @@ contract SuperHookLiquidityTest is SuperHookCallbackTest {
     function test_afterAddLiquidityDispatched() public {
         assertEq(mockSubHook.afterAddLiquidityCount(), 0);
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
-            poolKey,
-            LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.afterAddLiquidityCount(), 1);
     }
 
     function test_beforeRemoveLiquidityDispatched() public {
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
-            poolKey,
-            LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.beforeRemoveLiquidityCount(), 0);
 
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey,
-            REMOVE_LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.beforeRemoveLiquidityCount(), 1);
     }
 
     function test_afterRemoveLiquidityDispatched() public {
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
-            poolKey,
-            LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.afterRemoveLiquidityCount(), 0);
 
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey,
-            REMOVE_LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.afterRemoveLiquidityCount(), 1);
     }
@@ -225,27 +158,16 @@ contract SuperHookLiquidityTest is SuperHookCallbackTest {
         MockERC20(Currency.unwrap(poolCurrency0)).mint(address(manager), 100);
         MockERC20(Currency.unwrap(poolCurrency1)).mint(address(manager), 200);
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
-            poolKey,
-            LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.afterAddLiquidityCount(), 1);
     }
 
     function test_multipleSubHooksLiquidityOrder() public {
-        MockSubHook mockSubHook2 = _deployMockSubHook(
-            manager,
-            address(superHook)
-        );
+        MockSubHook mockSubHook2 = _deployMockSubHook(manager, address(superHook));
         superHook.addSubHook(poolId, address(mockSubHook2), 1);
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
-            poolKey,
-            LIQUIDITY_PARAMS,
-            ""
-        );
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
 
         assertEq(mockSubHook.beforeAddLiquidityCount(), 1);
         assertEq(mockSubHook2.beforeAddLiquidityCount(), 1);
@@ -301,7 +223,6 @@ contract SuperHookDonateTest is SuperHookCallbackTest {
 }
 
 contract SuperHookPermissionTest is Test, Deployers, SuperHookCallbackTest {
-
     function test_hasAllPermissions() public {
         // TODO: Implement
     }

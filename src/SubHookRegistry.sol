@@ -56,18 +56,12 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     /// @param admin           Address that will control this pool's sub-hook list.
     /// @param strategy        Conflict resolution strategy.
     /// @param customResolver  IConflictResolver address. Required iff strategy == CUSTOM.
-    function _registerPool(
-        PoolId poolId,
-        address admin,
-        ConflictStrategy strategy,
-        address customResolver
-    ) internal {
-        if (_configs[poolId].admin != address(0))
+    function _registerPool(PoolId poolId, address admin, ConflictStrategy strategy, address customResolver) internal {
+        if (_configs[poolId].admin != address(0)) {
             revert PoolAlreadyRegistered(poolId);
+        }
         if (admin == address(0)) revert InvalidAdminAddress();
-        if (
-            strategy == ConflictStrategy.CUSTOM && customResolver == address(0)
-        ) {
+        if (strategy == ConflictStrategy.CUSTOM && customResolver == address(0)) {
             revert CustomResolverRequired();
         }
 
@@ -95,31 +89,31 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     /// @param subHook      Address of the IHooks contract.
     ///                     Must have at least one V4 permission flag in its address.
     /// @param insertIndex  0-based position to insert at; equal to length = append.
-    function addSubHook(
-        PoolId poolId,
-        address subHook,
-        uint256 insertIndex
-    ) external onlyAdmin(poolId) notLocked(poolId) poolExists(poolId) {
+    function addSubHook(PoolId poolId, address subHook, uint256 insertIndex)
+        external
+        onlyAdmin(poolId)
+        notLocked(poolId)
+        poolExists(poolId)
+    {
         if (subHook == address(0)) revert InvalidSubHookAddress();
         PoolHookConfig storage cfg = _configs[poolId];
 
-        if (cfg.subHooks.length >= MAX_SUB_HOOKS)
+        if (cfg.subHooks.length >= MAX_SUB_HOOKS) {
             revert MaxSubHooksReached(poolId);
+        }
         if (insertIndex > cfg.subHooks.length) {
             revert InvalidIndex(insertIndex, cfg.subHooks.length);
         }
 
         // Reject duplicates
         for (uint256 i; i < cfg.subHooks.length; ++i) {
-            if (cfg.subHooks[i] == subHook)
+            if (cfg.subHooks[i] == subHook) {
                 revert SubHookAlreadyRegistered(poolId, subHook);
+            }
         }
 
         // Validate hook has the expected permissions
-        Hooks.validateHookPermissions(
-            IHooks(subHook),
-            BaseHook(subHook).getHookPermissions()
-        );
+        Hooks.validateHookPermissions(IHooks(subHook), BaseHook(subHook).getHookPermissions());
 
         // Shift tail right to open a slot at insertIndex.
         cfg.subHooks.push(address(0));
@@ -134,15 +128,18 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     }
 
     /// @notice Remove a registered sub-hook from the pool's execution list.
-    function removeSubHook(
-        PoolId poolId,
-        address subHook
-    ) external onlyAdmin(poolId) notLocked(poolId) poolExists(poolId) {
+    function removeSubHook(PoolId poolId, address subHook)
+        external
+        onlyAdmin(poolId)
+        notLocked(poolId)
+        poolExists(poolId)
+    {
         PoolHookConfig storage cfg = _configs[poolId];
 
         uint256 idx = _findSubHook(cfg, subHook);
-        if (idx == type(uint256).max)
+        if (idx == type(uint256).max) {
             revert SubHookNotRegistered(poolId, subHook);
+        }
 
         // Shift tail left to close the gap, preserving order.
         uint256 last = cfg.subHooks.length - 1;
@@ -157,14 +154,17 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     /// @notice Atomically reorder the sub-hook list in a single call.
     ///         `newOrder` must be a permutation of the current list —
     ///         no additions, no removals, no duplicate addresses.
-    function reorderSubHooks(
-        PoolId poolId,
-        address[] calldata newOrder
-    ) external onlyAdmin(poolId) notLocked(poolId) poolExists(poolId) {
+    function reorderSubHooks(PoolId poolId, address[] calldata newOrder)
+        external
+        onlyAdmin(poolId)
+        notLocked(poolId)
+        poolExists(poolId)
+    {
         PoolHookConfig storage cfg = _configs[poolId];
 
-        if (newOrder.length != cfg.subHooks.length)
+        if (newOrder.length != cfg.subHooks.length) {
             revert InvalidReorderLength();
+        }
 
         // Verify newOrder is a strict permutation (O(n²), safe for n ≤ 8).
         bool[] memory matched = new bool[](cfg.subHooks.length);
@@ -194,10 +194,7 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     // -------------------------------------------------------------------------
 
     /// @notice Transfer admin rights (e.g. to a multisig or DAO after initial setup).
-    function transferAdmin(
-        PoolId poolId,
-        address newAdmin
-    ) external onlyAdmin(poolId) poolExists(poolId) {
+    function transferAdmin(PoolId poolId, address newAdmin) external onlyAdmin(poolId) poolExists(poolId) {
         if (newAdmin == address(0)) revert InvalidAdminAddress();
         address prev = _configs[poolId].admin;
         _configs[poolId].admin = newAdmin;
@@ -207,22 +204,19 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     /// @notice Permanently lock this pool's sub-hook config.
     ///         No sub-hooks can be added, removed, or reordered after this call.
     ///         Irreversible — gives LPs a hard guarantee that pool rules are immutable.
-    function lockPool(
-        PoolId poolId
-    ) external onlyAdmin(poolId) poolExists(poolId) {
+    function lockPool(PoolId poolId) external onlyAdmin(poolId) poolExists(poolId) {
         _configs[poolId].locked = true;
         emit PoolLocked(poolId);
     }
 
     /// @notice Update the conflict resolution strategy for a pool.
-    function updateStrategy(
-        PoolId poolId,
-        ConflictStrategy newStrategy,
-        address newResolver
-    ) external onlyAdmin(poolId) notLocked(poolId) poolExists(poolId) {
-        if (
-            newStrategy == ConflictStrategy.CUSTOM && newResolver == address(0)
-        ) {
+    function updateStrategy(PoolId poolId, ConflictStrategy newStrategy, address newResolver)
+        external
+        onlyAdmin(poolId)
+        notLocked(poolId)
+        poolExists(poolId)
+    {
+        if (newStrategy == ConflictStrategy.CUSTOM && newResolver == address(0)) {
             revert CustomResolverRequired();
         }
         PoolHookConfig storage cfg = _configs[poolId];
@@ -235,15 +229,11 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     // Views
     // -------------------------------------------------------------------------
 
-    function getPoolConfig(
-        PoolId poolId
-    ) external view returns (PoolHookConfig memory) {
+    function getPoolConfig(PoolId poolId) external view returns (PoolHookConfig memory) {
         return _configs[poolId];
     }
 
-    function getSubHooks(
-        PoolId poolId
-    ) external view returns (address[] memory) {
+    function getSubHooks(PoolId poolId) external view returns (address[] memory) {
         return _configs[poolId].subHooks;
     }
 
@@ -251,10 +241,7 @@ abstract contract SubHookRegistry is ISubHookRegistry {
         return _configs[poolId].subHooks.length;
     }
 
-    function isRegistered(
-        PoolId poolId,
-        address subHook
-    ) external view returns (bool) {
+    function isRegistered(PoolId poolId, address subHook) external view returns (bool) {
         return _findSubHook(_configs[poolId], subHook) != type(uint256).max;
     }
 
@@ -268,17 +255,12 @@ abstract contract SubHookRegistry is ISubHookRegistry {
 
     /// @dev Returns the PoolHookConfig storage pointer for a given pool.
     ///      SuperHook uses this to iterate sub-hooks during each callback.
-    function _getConfig(
-        PoolId poolId
-    ) internal view returns (PoolHookConfig storage) {
+    function _getConfig(PoolId poolId) internal view returns (PoolHookConfig storage) {
         return _configs[poolId];
     }
 
     /// @dev Returns true if the sub-hook has `flag` set in its address.
-    function _hasPermission(
-        address subHook,
-        uint160 flag
-    ) internal pure returns (bool) {
+    function _hasPermission(address subHook, uint160 flag) internal pure returns (bool) {
         return Hooks.hasPermission(IHooks(subHook), flag);
     }
 
@@ -288,10 +270,7 @@ abstract contract SubHookRegistry is ISubHookRegistry {
 
     /// @dev Linear scan for a sub-hook's index. Returns type(uint256).max if absent.
     ///      O(n), safe for n ≤ MAX_SUB_HOOKS = 8.
-    function _findSubHook(
-        PoolHookConfig storage cfg,
-        address subHook
-    ) private view returns (uint256) {
+    function _findSubHook(PoolHookConfig storage cfg, address subHook) private view returns (uint256) {
         for (uint256 i; i < cfg.subHooks.length; ++i) {
             if (cfg.subHooks[i] == subHook) return i;
         }
@@ -300,8 +279,9 @@ abstract contract SubHookRegistry is ISubHookRegistry {
 
     function _poolExists(PoolId poolId) internal view {
         // A registered pool always has a non-zero admin address.
-        if (_configs[poolId].admin == address(0))
+        if (_configs[poolId].admin == address(0)) {
             revert PoolNotRegistered(poolId);
+        }
     }
 
     function _notLocked(PoolId poolId) internal view {
@@ -309,7 +289,8 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     }
 
     function _onlyAdmin(PoolId poolId) internal view {
-        if (_configs[poolId].admin != msg.sender)
+        if (_configs[poolId].admin != msg.sender) {
             revert NotAdmin(poolId, msg.sender);
+        }
     }
 }

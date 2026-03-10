@@ -52,13 +52,7 @@ abstract contract SubHookRegistryTest is Test, Deployers {
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
         superHook = _deploySuperHook(manager);
-        poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            hooks: superHook,
-            fee: 3000,
-            tickSpacing: 60
-        });
+        poolKey = PoolKey({currency0: currency0, currency1: currency1, hooks: superHook, fee: 3000, tickSpacing: 60});
         poolId = poolKey.toId();
 
         manager.initialize(poolKey, SQRT_PRICE_1_1);
@@ -320,18 +314,18 @@ contract SubHookRegistryReorderTest is SubHookRegistryTest {
         vm.assume(length > 0 && length <= 4);
         MockSubHook[] memory hooks = new MockSubHook[](length);
         address[] memory newOrder = new address[](length);
-        
+
         for (uint256 i = 0; i < length; ++i) {
             hooks[i] = _deployMockSubHook(manager);
             superHook.addSubHook(poolId, address(hooks[i]), i);
             newOrder[i] = address(hooks[i]);
         }
-        
+
         address[] memory reversed = new address[](length);
         for (uint256 i = 0; i < length; ++i) {
             reversed[i] = newOrder[length - 1 - i];
         }
-        
+
         superHook.reorderSubHooks(poolId, reversed);
         address[] memory subHooks = superHook.getSubHooks(poolId);
         for (uint256 i = 0; i < length; ++i) {
@@ -513,13 +507,8 @@ contract SubHookRegistryViewsTest is SubHookRegistryTest {
     }
 
     function test_returnsEmptyForUnregisteredPool() public {
-        PoolKey memory otherKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            hooks: superHook,
-            fee: 1000,
-            tickSpacing: 60
-        });
+        PoolKey memory otherKey =
+            PoolKey({currency0: currency0, currency1: currency1, hooks: superHook, fee: 1000, tickSpacing: 60});
         PoolId otherId = otherKey.toId();
         PoolHookConfig memory config = superHook.getPoolConfig(otherId);
         assertEq(config.admin, address(0));

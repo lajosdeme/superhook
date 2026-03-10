@@ -13,7 +13,6 @@ import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 ///         or ADDITIVE can deploy a contract implementing this interface and
 ///         register it in their pool's PoolHookConfig.
 interface IConflictResolver {
-
     /// @notice Resolve competing beforeSwap deltas and lpFeeOverride values
     ///         returned by multiple sub-hooks into a single canonical result.
     ///

@@ -4,26 +4,15 @@ pragma solidity ^0.8.24;
 import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
-import {
-    SwapParams,
-    ModifyLiquidityParams
-} from "v4-core/types/PoolOperation.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
-import {
-    BeforeSwapDelta,
-    BeforeSwapDeltaLibrary,
-    toBeforeSwapDelta
-} from "v4-core/types/BeforeSwapDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {BaseHook} from "./external/BaseHook.sol";
 import {ConflictResolver} from "./ConflictResolver.sol";
 import {PoolHookConfig, ConflictStrategy} from "./types/PoolHookConfig.sol";
-import {
-    BeforeSwapAccumulator,
-    AfterSwapAccumulator,
-    LiquidityAccumulator
-} from "./types/Accumulators.sol";
+import {BeforeSwapAccumulator, AfterSwapAccumulator, LiquidityAccumulator} from "./types/Accumulators.sol";
 
 /// @title SuperHook
 /// @notice A singleton V4 hook that acts as an aggregator, allowing multiple
@@ -67,29 +56,23 @@ contract SuperHook is BaseHook, ConflictResolver {
     ///         SuperHook must handle every possible callback because it serves
     ///         pools whose sub-hooks may collectively require any combination.
     ///         PoolManager validates this against the mined address at initialize time.
-    function getHookPermissions()
-        public
-        pure
-        override
-        returns (Hooks.Permissions memory)
-    {
-        return
-            Hooks.Permissions({
-                beforeInitialize: true,
-                afterInitialize: true,
-                beforeAddLiquidity: true,
-                afterAddLiquidity: true,
-                beforeRemoveLiquidity: true,
-                afterRemoveLiquidity: true,
-                beforeSwap: true,
-                afterSwap: true,
-                beforeDonate: true,
-                afterDonate: true,
-                beforeSwapReturnDelta: true,
-                afterSwapReturnDelta: true,
-                afterAddLiquidityReturnDelta: true,
-                afterRemoveLiquidityReturnDelta: true
-            });
+    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
+        return Hooks.Permissions({
+            beforeInitialize: true,
+            afterInitialize: true,
+            beforeAddLiquidity: true,
+            afterAddLiquidity: true,
+            beforeRemoveLiquidity: true,
+            afterRemoveLiquidity: true,
+            beforeSwap: true,
+            afterSwap: true,
+            beforeDonate: true,
+            afterDonate: true,
+            beforeSwapReturnDelta: true,
+            afterSwapReturnDelta: true,
+            afterAddLiquidityReturnDelta: true,
+            afterRemoveLiquidityReturnDelta: true
+        });
     }
 
     // =========================================================================
@@ -105,18 +88,13 @@ contract SuperHook is BaseHook, ConflictResolver {
     ///
     /// @dev After the pool is initialized admins should call updateStrategy to set the
     ///      ConflictStrategy desired.
-    function _beforeInitialize(
-        address sender,
-        PoolKey calldata key,
-        uint160 sqrtPriceX96
-    ) internal override returns (bytes4) {
+    function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
+        internal
+        override
+        returns (bytes4)
+    {
         // sender is the pool deployer — they become the admin for this pool.
-        _registerPool(
-            key.toId(),
-            sender,
-            ConflictStrategy.FIRST_WINS,
-            address(0)
-        );
+        _registerPool(key.toId(), sender, ConflictStrategy.FIRST_WINS, address(0));
 
         _dispatchBeforeInitialize(sender, key, sqrtPriceX96);
 
@@ -124,11 +102,7 @@ contract SuperHook is BaseHook, ConflictResolver {
     }
 
     /// @dev Forward beforeInitialize to all subscribed sub-hooks.
-    function _dispatchBeforeInitialize(
-        address sender,
-        PoolKey calldata key,
-        uint160 sqrtPriceX96
-    ) private {
+    function _dispatchBeforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96) private {
         PoolId poolId = key.toId();
         PoolHookConfig storage cfg = _getConfig(poolId);
 
@@ -144,24 +118,18 @@ contract SuperHook is BaseHook, ConflictResolver {
     // afterInitialize
     // -------------------------------------------------------------------------
 
-    function _afterInitialize(
-        address sender,
-        PoolKey calldata key,
-        uint160 sqrtPriceX96,
-        int24 tick
-    ) internal override returns (bytes4) {
+    function _afterInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96, int24 tick)
+        internal
+        override
+        returns (bytes4)
+    {
         PoolId poolId = key.toId();
         PoolHookConfig storage cfg = _getConfig(poolId);
 
         for (uint256 i; i < cfg.subHooks.length; ++i) {
             address subHook = cfg.subHooks[i];
             if (IHooks(subHook).hasPermission(Hooks.AFTER_INITIALIZE_FLAG)) {
-                IHooks(subHook).afterInitialize(
-                    sender,
-                    key,
-                    sqrtPriceX96,
-                    tick
-                );
+                IHooks(subHook).afterInitialize(sender, key, sqrtPriceX96, tick);
             }
         }
 
@@ -183,15 +151,8 @@ contract SuperHook is BaseHook, ConflictResolver {
 
         for (uint256 i; i < cfg.subHooks.length; ++i) {
             address subHook = cfg.subHooks[i];
-            if (
-                IHooks(subHook).hasPermission(Hooks.BEFORE_ADD_LIQUIDITY_FLAG)
-            ) {
-                IHooks(subHook).beforeAddLiquidity(
-                    sender,
-                    key,
-                    params,
-                    hookData
-                );
+            if (IHooks(subHook).hasPermission(Hooks.BEFORE_ADD_LIQUIDITY_FLAG)) {
+                IHooks(subHook).beforeAddLiquidity(sender, key, params, hookData);
             }
         }
 
@@ -213,17 +174,8 @@ contract SuperHook is BaseHook, ConflictResolver {
 
         for (uint256 i; i < cfg.subHooks.length; ++i) {
             address subHook = cfg.subHooks[i];
-            if (
-                IHooks(subHook).hasPermission(
-                    Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
-                )
-            ) {
-                IHooks(subHook).beforeRemoveLiquidity(
-                    sender,
-                    key,
-                    params,
-                    hookData
-                );
+            if (IHooks(subHook).hasPermission(Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG)) {
+                IHooks(subHook).beforeRemoveLiquidity(sender, key, params, hookData);
             }
         }
 
@@ -247,13 +199,7 @@ contract SuperHook is BaseHook, ConflictResolver {
         for (uint256 i; i < cfg.subHooks.length; ++i) {
             address subHook = cfg.subHooks[i];
             if (IHooks(subHook).hasPermission(Hooks.BEFORE_DONATE_FLAG)) {
-                IHooks(subHook).beforeDonate(
-                    sender,
-                    key,
-                    amount0,
-                    amount1,
-                    hookData
-                );
+                IHooks(subHook).beforeDonate(sender, key, amount0, amount1, hookData);
             }
         }
 
@@ -277,13 +223,7 @@ contract SuperHook is BaseHook, ConflictResolver {
         for (uint256 i; i < cfg.subHooks.length; ++i) {
             address subHook = cfg.subHooks[i];
             if (IHooks(subHook).hasPermission(Hooks.AFTER_DONATE_FLAG)) {
-                IHooks(subHook).afterDonate(
-                    sender,
-                    key,
-                    amount0,
-                    amount1,
-                    hookData
-                );
+                IHooks(subHook).afterDonate(sender, key, amount0, amount1, hookData);
             }
         }
 
@@ -301,40 +241,19 @@ contract SuperHook is BaseHook, ConflictResolver {
     /// @notice Dispatches beforeSwap to all subscribed sub-hooks, collecting
     ///         each sub-hook's (deltaSpecified, deltaUnspecified, lpFeeOverride),
     ///         then resolves them into a single result via ConflictResolver.
-    function _beforeSwap(
-        address sender,
-        PoolKey calldata key,
-        SwapParams calldata params,
-        bytes calldata hookData
-    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
         PoolId poolId = key.toId();
 
-        BeforeSwapAccumulator memory acc = _collectBeforeSwap(
-            poolId,
-            sender,
-            key,
-            params,
-            hookData
-        );
+        BeforeSwapAccumulator memory acc = _collectBeforeSwap(poolId, sender, key, params, hookData);
 
-        (
-            int128 resolvedSpecified,
-            int128 resolvedUnspecified,
-            uint24 resolvedFee
-        ) = _resolveBeforeSwap(
-                poolId,
-                key,
-                params,
-                acc.deltaSpecifieds,
-                acc.deltaUnspecifieds,
-                acc.lpFeeOverrides
-            );
+        (int128 resolvedSpecified, int128 resolvedUnspecified, uint24 resolvedFee) =
+            _resolveBeforeSwap(poolId, key, params, acc.deltaSpecifieds, acc.deltaUnspecifieds, acc.lpFeeOverrides);
 
-        return (
-            BaseHook.beforeSwap.selector,
-            toBeforeSwapDelta(resolvedSpecified, resolvedUnspecified),
-            resolvedFee
-        );
+        return (BaseHook.beforeSwap.selector, toBeforeSwapDelta(resolvedSpecified, resolvedUnspecified), resolvedFee);
     }
 
     // -------------------------------------------------------------------------
@@ -350,23 +269,10 @@ contract SuperHook is BaseHook, ConflictResolver {
     ) internal override returns (bytes4, int128) {
         PoolId poolId = key.toId();
 
-        AfterSwapAccumulator memory acc = _collectAfterSwap(
-            poolId,
-            sender,
-            key,
-            params,
-            swapDelta,
-            hookData
-        );
+        AfterSwapAccumulator memory acc = _collectAfterSwap(poolId, sender, key, params, swapDelta, hookData);
 
-        (, int128 resolvedUnspecified) = _resolveAfterSwap(
-            poolId,
-            key,
-            params,
-            swapDelta,
-            acc.deltaSpecifieds,
-            acc.deltaUnspecifieds
-        );
+        (, int128 resolvedUnspecified) =
+            _resolveAfterSwap(poolId, key, params, swapDelta, acc.deltaSpecifieds, acc.deltaUnspecifieds);
 
         return (BaseHook.afterSwap.selector, resolvedUnspecified);
     }
@@ -385,33 +291,14 @@ contract SuperHook is BaseHook, ConflictResolver {
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId poolId = key.toId();
 
-        LiquidityAccumulator memory acc = _collectAfterAddLiquidity(
-            poolId,
-            sender,
-            key,
-            params,
-            delta,
-            feesAccrued,
-            hookData
+        LiquidityAccumulator memory acc =
+            _collectAfterAddLiquidity(poolId, sender, key, params, delta, feesAccrued, hookData);
+
+        (int128 resolvedAmount0, int128 resolvedAmount1) = _resolveAfterAddLiquidity(
+            poolId, key, params, delta, feesAccrued, acc.deltaSpecifieds, acc.deltaUnspecifieds
         );
 
-        (
-            int128 resolvedAmount0,
-            int128 resolvedAmount1
-        ) = _resolveAfterAddLiquidity(
-                poolId,
-                key,
-                params,
-                delta,
-                feesAccrued,
-                acc.deltaSpecifieds,
-                acc.deltaUnspecifieds
-            );
-
-        return (
-            BaseHook.afterAddLiquidity.selector,
-            _toBalanceDelta(resolvedAmount0, resolvedAmount1)
-        );
+        return (BaseHook.afterAddLiquidity.selector, _toBalanceDelta(resolvedAmount0, resolvedAmount1));
     }
 
     // -------------------------------------------------------------------------
@@ -428,33 +315,14 @@ contract SuperHook is BaseHook, ConflictResolver {
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId poolId = key.toId();
 
-        LiquidityAccumulator memory acc = _collectAfterRemoveLiquidity(
-            poolId,
-            sender,
-            key,
-            params,
-            delta,
-            feesAccrued,
-            hookData
+        LiquidityAccumulator memory acc =
+            _collectAfterRemoveLiquidity(poolId, sender, key, params, delta, feesAccrued, hookData);
+
+        (int128 resolvedAmount0, int128 resolvedAmount1) = _resolveAfterRemoveLiquidity(
+            poolId, key, params, delta, feesAccrued, acc.deltaSpecifieds, acc.deltaUnspecifieds
         );
 
-        (
-            int128 resolvedAmount0,
-            int128 resolvedAmount1
-        ) = _resolveAfterRemoveLiquidity(
-                poolId,
-                key,
-                params,
-                delta,
-                feesAccrued,
-                acc.deltaSpecifieds,
-                acc.deltaUnspecifieds
-            );
-
-        return (
-            BaseHook.afterRemoveLiquidity.selector,
-            _toBalanceDelta(resolvedAmount0, resolvedAmount1)
-        );
+        return (BaseHook.afterRemoveLiquidity.selector, _toBalanceDelta(resolvedAmount0, resolvedAmount1));
     }
 
     // =========================================================================
@@ -481,8 +349,7 @@ contract SuperHook is BaseHook, ConflictResolver {
         for (uint256 i; i < n; ++i) {
             address subHook = cfg.subHooks[i];
             if (IHooks(subHook).hasPermission(Hooks.BEFORE_SWAP_FLAG)) {
-                (, BeforeSwapDelta bsd, uint24 fee) = IHooks(subHook)
-                    .beforeSwap(sender, key, params, hookData);
+                (, BeforeSwapDelta bsd, uint24 fee) = IHooks(subHook).beforeSwap(sender, key, params, hookData);
                 acc.deltaSpecifieds[i] = bsd.getSpecifiedDelta();
                 acc.deltaUnspecifieds[i] = bsd.getUnspecifiedDelta();
                 acc.lpFeeOverrides[i] = fee;
@@ -510,13 +377,7 @@ contract SuperHook is BaseHook, ConflictResolver {
         for (uint256 i; i < n; ++i) {
             address subHook = cfg.subHooks[i];
             if (IHooks(subHook).hasPermission(Hooks.AFTER_SWAP_FLAG)) {
-                (, int128 hookDelta) = IHooks(subHook).afterSwap(
-                    sender,
-                    key,
-                    params,
-                    swapDelta,
-                    hookData
-                );
+                (, int128 hookDelta) = IHooks(subHook).afterSwap(sender, key, params, swapDelta, hookData);
                 // afterSwap returns a single int128 (hookDeltaUnspecified).
                 // deltaSpecifieds[i] stays zero.
                 acc.deltaUnspecifieds[i] = hookDelta;
@@ -545,14 +406,8 @@ contract SuperHook is BaseHook, ConflictResolver {
         for (uint256 i; i < n; ++i) {
             address subHook = cfg.subHooks[i];
             if (IHooks(subHook).hasPermission(Hooks.AFTER_ADD_LIQUIDITY_FLAG)) {
-                (, BalanceDelta hookDelta) = IHooks(subHook).afterAddLiquidity(
-                    sender,
-                    key,
-                    params,
-                    delta,
-                    feesAccrued,
-                    hookData
-                );
+                (, BalanceDelta hookDelta) =
+                    IHooks(subHook).afterAddLiquidity(sender, key, params, delta, feesAccrued, hookData);
                 acc.deltaSpecifieds[i] = hookDelta.amount0();
                 acc.deltaUnspecifieds[i] = hookDelta.amount1();
             }
@@ -579,18 +434,9 @@ contract SuperHook is BaseHook, ConflictResolver {
 
         for (uint256 i; i < n; ++i) {
             address subHook = cfg.subHooks[i];
-            if (
-                IHooks(subHook).hasPermission(Hooks.AFTER_REMOVE_LIQUIDITY_FLAG)
-            ) {
-                (, BalanceDelta hookDelta) = IHooks(subHook)
-                    .afterRemoveLiquidity(
-                        sender,
-                        key,
-                        params,
-                        delta,
-                        feesAccrued,
-                        hookData
-                    );
+            if (IHooks(subHook).hasPermission(Hooks.AFTER_REMOVE_LIQUIDITY_FLAG)) {
+                (, BalanceDelta hookDelta) =
+                    IHooks(subHook).afterRemoveLiquidity(sender, key, params, delta, feesAccrued, hookData);
                 acc.deltaSpecifieds[i] = hookDelta.amount0();
                 acc.deltaUnspecifieds[i] = hookDelta.amount1();
             }
@@ -600,18 +446,14 @@ contract SuperHook is BaseHook, ConflictResolver {
     /// @dev Packs two int128 amounts into a BalanceDelta.
     ///      uint128 casts are intentional — BalanceDelta stores raw bit patterns.
     ///      Negative values are valid and expected (they mean tokens are owed).
-    function _toBalanceDelta(
-        int128 amount0,
-        int128 amount1
-    ) private pure returns (BalanceDelta) {
-        return
-            BalanceDelta.wrap(
-                int256(
+    function _toBalanceDelta(int128 amount0, int128 amount1) private pure returns (BalanceDelta) {
+        return BalanceDelta.wrap(
+            int256(
+                // forge-lint: disable-next-line(unsafe-typecast)
+                (uint256(uint128(amount0)) << 128) | 
                     // forge-lint: disable-next-line(unsafe-typecast)
-                    (uint256(uint128(amount0)) << 128) |
-                        // forge-lint: disable-next-line(unsafe-typecast)
-                        uint256(uint128(amount1))
-                )
-            );
+                    uint256(uint128(amount1))
+            )
+        );
     }
 }
