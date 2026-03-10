@@ -11,7 +11,7 @@ import {ConflictResolver} from "../../src/ConflictResolver.sol";
 contract ConflictResolverHarness is ConflictResolver {
     constructor() {}
 
-    function testable_firstWins(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
+    function exposed_firstWins(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
         external
         pure
         returns (int128 deltaSpecified, int128 deltaUnspecified)
@@ -19,7 +19,7 @@ contract ConflictResolverHarness is ConflictResolver {
         return _firstWins(deltaSpecifieds, deltaUnspecifieds);
     }
 
-    function testable_lastWins(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
+    function exposed_lastWins(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
         external
         pure
         returns (int128 deltaSpecified, int128 deltaUnspecified)
@@ -27,7 +27,7 @@ contract ConflictResolverHarness is ConflictResolver {
         return _lastWins(deltaSpecifieds, deltaUnspecifieds);
     }
 
-    function testable_additive(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
+    function exposed_additive(int128[] memory deltaSpecifieds, int128[] memory deltaUnspecifieds)
         external
         pure
         returns (int128 deltaSpecified, int128 deltaUnspecified)
@@ -35,7 +35,7 @@ contract ConflictResolverHarness is ConflictResolver {
         return _additive(deltaSpecifieds, deltaUnspecifieds);
     }
 
-    function testable_firstWinsBeforeSwap(
+    function exposed_firstWinsBeforeSwap(
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
@@ -43,7 +43,7 @@ contract ConflictResolverHarness is ConflictResolver {
         return _firstWinsBeforeSwap(deltaSpecifieds, deltaUnspecifieds, lpFeeOverrides);
     }
 
-    function testable_lastWinsBeforeSwap(
+    function exposed_lastWinsBeforeSwap(
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
@@ -51,7 +51,7 @@ contract ConflictResolverHarness is ConflictResolver {
         return _lastWinsBeforeSwap(deltaSpecifieds, deltaUnspecifieds, lpFeeOverrides);
     }
 
-    function testable_additiveBeforeSwap(
+    function exposed_additiveBeforeSwap(
         int128[] memory deltaSpecifieds,
         int128[] memory deltaUnspecifieds,
         uint24[] memory lpFeeOverrides
