@@ -9,6 +9,7 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
+import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {Currency} from "v4-core/types/Currency.sol";
@@ -122,7 +123,7 @@ contract SuperHookLiquidityTest is SuperHookCallbackTest {
         assertEq(mockSubHook.beforeAddLiquidityCount(), 0);
 
         modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
+        vm.breakpoint("a");
         assertEq(mockSubHook.beforeAddLiquidityCount(), 1);
     }
 
@@ -175,59 +176,125 @@ contract SuperHookLiquidityTest is SuperHookCallbackTest {
 }
 
 contract SuperHookSwapTest is SuperHookCallbackTest {
+    function _addLiquidity() internal {
+        MockERC20(Currency.unwrap(poolCurrency0)).mint(address(manager), 100e18);
+        MockERC20(Currency.unwrap(poolCurrency1)).mint(address(manager), 100e18);
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
+    }
+
     function test_beforeSwapDispatched() public {
-        // TODO: Implement
+        assertEq(mockSubHook.beforeSwapCount(), 0);
+        _addLiquidity();
+        swap(poolKey, true, -1000, "");
+        assertEq(mockSubHook.beforeSwapCount(), 1);
     }
 
     function test_afterSwapDispatched() public {
-        // TODO: Implement
+        assertEq(mockSubHook.afterSwapCount(), 0);
+        _addLiquidity();
+        swap(poolKey, true, -1000, "");
+        assertEq(mockSubHook.afterSwapCount(), 1);
     }
 
     function test_beforeSwapDeltaResolved() public {
-        // TODO: Implement
+        mockSubHook.setBeforeSwapResult(int128(0), int128(0), 0);
+        _addLiquidity();
+        swap(poolKey, true, -1000, "");
+        assertEq(mockSubHook.beforeSwapCount(), 1);
     }
 
     function test_afterSwapDeltaResolved() public {
-        // TODO: Implement
+        mockSubHook.setAfterSwapResult(int128(0));
+        _addLiquidity();
+        swap(poolKey, true, -1000, "");
+        assertEq(mockSubHook.afterSwapCount(), 1);
     }
 
     function test_lpFeeOverrideResolved() public {
-        // TODO: Implement
+        mockSubHook.setBeforeSwapResult(0, 0, 1000);
+        _addLiquidity();
+        swap(poolKey, true, -1000, "");
+        assertEq(mockSubHook.beforeSwapCount(), 1);
     }
 
     function test_multipleSubHooksSwapOrder() public {
-        // TODO: Implement
+        MockSubHook mockSubHook2 = _deployMockSubHook(manager, address(superHook));
+        superHook.addSubHook(poolId, address(mockSubHook2), 1);
+        _addLiquidity();
+        swap(poolKey, true, -1000, "");
+        assertEq(mockSubHook.beforeSwapCount(), 1);
+        assertEq(mockSubHook2.beforeSwapCount(), 1);
     }
 
     function test_fuzz_swapAmount(int256 amountSpecified) public {
-        // TODO: Implement
+        vm.assume(amountSpecified != 0);
+        _addLiquidity();
+        swap(poolKey, true, amountSpecified, "");
+        assertEq(mockSubHook.beforeSwapCount(), 1);
+        assertEq(mockSubHook.afterSwapCount(), 1);
     }
 }
 
 contract SuperHookDonateTest is SuperHookCallbackTest {
+    function _addLiquidity() internal {
+        MockERC20(Currency.unwrap(poolCurrency0)).mint(address(manager), 100e18);
+        MockERC20(Currency.unwrap(poolCurrency1)).mint(address(manager), 100e18);
+        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
+    }
+
     function test_beforeDonateDispatched() public {
-        // TODO: Implement
+        _addLiquidity();
+        assertEq(mockSubHook.beforeDonateCount(), 0);
+        donateRouter.donate(poolKey, 100, 200, "");
+        assertEq(mockSubHook.beforeDonateCount(), 1);
     }
 
     function test_afterDonateDispatched() public {
-        // TODO: Implement
+        _addLiquidity();
+        assertEq(mockSubHook.afterDonateCount(), 0);
+        donateRouter.donate(poolKey, 100, 200, "");
+        assertEq(mockSubHook.afterDonateCount(), 1);
     }
 
     function test_multipleSubHooksDonateOrder() public {
-        // TODO: Implement
+        MockSubHook mockSubHook2 = _deployMockSubHook(manager, address(superHook));
+        superHook.addSubHook(poolId, address(mockSubHook2), 1);
+        _addLiquidity();
+        donateRouter.donate(poolKey, 100, 200, "");
+        assertEq(mockSubHook.beforeDonateCount(), 1);
+        assertEq(mockSubHook2.beforeDonateCount(), 1);
     }
 
     function test_fuzz_donateAmounts(uint256 amount0, uint256 amount1) public {
-        // TODO: Implement
+        vm.assume(amount0 != 0 || amount1 != 0);
+        vm.assume(amount0 < 1e18 && amount1 < 1e18);
+        _addLiquidity();
+        donateRouter.donate(poolKey, amount0, amount1, "");
+        assertEq(mockSubHook.beforeDonateCount(), 1);
+        assertEq(mockSubHook.afterDonateCount(), 1);
     }
 }
 
 contract SuperHookPermissionTest is Test, Deployers, SuperHookCallbackTest {
-    function test_hasAllPermissions() public {
-        // TODO: Implement
+    function test_hasAllPermissions() public view {
+        Hooks.Permissions memory permissions = superHook.getHookPermissions();
+        assertTrue(permissions.beforeInitialize);
+        assertTrue(permissions.afterInitialize);
+        assertTrue(permissions.beforeAddLiquidity);
+        assertTrue(permissions.afterAddLiquidity);
+        assertTrue(permissions.beforeRemoveLiquidity);
+        assertTrue(permissions.afterRemoveLiquidity);
+        assertTrue(permissions.beforeSwap);
+        assertTrue(permissions.afterSwap);
+        assertTrue(permissions.beforeDonate);
+        assertTrue(permissions.afterDonate);
+        assertTrue(permissions.beforeSwapReturnDelta);
+        assertTrue(permissions.afterSwapReturnDelta);
+        assertTrue(permissions.afterAddLiquidityReturnDelta);
+        assertTrue(permissions.afterRemoveLiquidityReturnDelta);
     }
 
-    function test_permissionsMatchAddress() public {
-        // TODO: Implement
+    function test_permissionsMatchAddress() public view {
+        Hooks.validateHookPermissions(IHooks(superHook), superHook.getHookPermissions());
     }
 }
