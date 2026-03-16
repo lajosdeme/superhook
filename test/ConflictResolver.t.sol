@@ -11,19 +11,25 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
+import {Currency} from "v4-core/types/Currency.sol";
 
 import {SuperHook} from "../src/SuperHook.sol";
 import {PoolHookConfig, ConflictStrategy} from "../src/types/PoolHookConfig.sol";
+import {ConflictResolver} from "../src/ConflictResolver.sol";
 
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
-import {Currency} from "v4-core/types/Currency.sol";
-
 import {MockSubHook} from "./mocks/MockSubHook.sol";
 import {ConflictResolverHarness} from "./mocks/ConflictResolverHarness.sol";
 import {MockCustomResolver} from "./mocks/MockCustomResolver.sol";
 import {HookMiner} from "./HookMiner.sol";
 
-abstract contract ConflictResolverTest is Test, Deployers {
+import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
+
+// =============================================================================
+// Base — shared setup for all ConflictResolver tests
+// =============================================================================
+
+abstract contract ConflictResolverTestBase is Test, Deployers {
     using PoolIdLibrary for PoolKey;
 
     SuperHook public superHook;
@@ -36,11 +42,21 @@ abstract contract ConflictResolverTest is Test, Deployers {
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
         superHook = _deploySuperHook(manager);
-        poolKey = PoolKey({currency0: currency0, currency1: currency1, hooks: superHook, fee: 3000, tickSpacing: 60});
+        poolKey = PoolKey({
+            currency0: currency0,
+            currency1: currency1,
+            hooks: superHook,
+            fee:  LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            tickSpacing: 60
+        });
         poolId = poolKey.toId();
 
         manager.initialize(poolKey, SQRT_PRICE_1_1);
     }
+
+    // -------------------------------------------------------------------------
+    // Deployment helpers
+    // -------------------------------------------------------------------------
 
     function _deploySuperHook(IPoolManager poolManager) internal returns (SuperHook) {
         bytes memory creationCode = type(SuperHook).creationCode;
@@ -48,40 +64,46 @@ abstract contract ConflictResolverTest is Test, Deployers {
 
         uint256 salt = HookMiner.findSalt(address(this), initCode);
         bytes32 initCodeHash = keccak256(initCode);
-
         address hookAddr = HookMiner.computeCreate2Address(salt, initCodeHash, address(this));
 
         assembly {
             let ret := create2(0, add(initCode, 0x20), mload(initCode), salt)
-            if iszero(ret) {
-                revert(0, 0)
-            }
+            if iszero(ret) { revert(0, 0) }
         }
 
-        SuperHook hook = SuperHook(payable(hookAddr));
-        return hook;
+        return SuperHook(payable(hookAddr));
     }
 
-    function _deployMockSubHook(IPoolManager poolManager, address _superHook) internal returns (MockSubHook) {
+    /// @dev Deploys MockSubHook via CREATE2. The mockNonce ensures each deployment
+    ///      gets a unique initcode so HookMiner finds distinct addresses.
+    ///      The mined address will have ALL permission bits set (same as SuperHook),
+    ///      matching MockSubHook.getHookPermissions() which returns all-true.
+    function _deployMockSubHook(IPoolManager poolManager, address _superHook)
+        internal
+        returns (MockSubHook)
+    {
         bytes memory creationCode = type(MockSubHook).creationCode;
-        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(address(poolManager), _superHook, mockNonce));
+        bytes memory initCode = abi.encodePacked(
+            creationCode,
+            abi.encode(address(poolManager), _superHook, mockNonce)
+        );
         mockNonce++;
 
         uint256 salt = HookMiner.findSalt(address(this), initCode);
         bytes32 initCodeHash = keccak256(initCode);
-
         address hookAddr = HookMiner.computeCreate2Address(salt, initCodeHash, address(this));
 
         assembly {
             let ret := create2(0, add(initCode, 0x20), mload(initCode), salt)
-            if iszero(ret) {
-                revert(0, 0)
-            }
+            if iszero(ret) { revert(0, 0) }
         }
 
-        MockSubHook hook = MockSubHook(payable(hookAddr));
-        return hook;
+        return MockSubHook(payable(hookAddr));
     }
+
+    // -------------------------------------------------------------------------
+    // Test helpers
+    // -------------------------------------------------------------------------
 
     function _addSubHook(address subHook) internal {
         superHook.addSubHook(poolId, subHook, superHook.getSubHooks(poolId).length);
@@ -91,207 +113,637 @@ abstract contract ConflictResolverTest is Test, Deployers {
         superHook.updateStrategy(poolId, strategy, address(0));
     }
 
-    function _verifyStrategyIsFirstWins() internal view {
-        PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint8(config.strategy), uint8(ConflictStrategy.FIRST_WINS));
+    function _setStrategyCustom(address resolver) internal {
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, resolver);
     }
 
+    function _verifyStrategy(ConflictStrategy expected) internal view {
+        PoolHookConfig memory config = superHook.getPoolConfig(poolId);
+        assertEq(uint8(config.strategy), uint8(expected));
+    }
+
+    /// @dev Mints tokens to the test contract and approves the routers.
+    ///      Does NOT send ETH — only for non-native currency pools.
     function _addLiquidity() internal {
-        MockERC20(Currency.unwrap(currency0)).mint(address(manager), 100e18);
-        MockERC20(Currency.unwrap(currency1)).mint(address(manager), 100e18);
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
+        MockERC20(Currency.unwrap(currency0)).mint(address(this), 100e18);
+        MockERC20(Currency.unwrap(currency1)).mint(address(this), 100e18);
+        MockERC20(Currency.unwrap(currency0)).approve(address(modifyLiquidityRouter), type(uint256).max);
+        MockERC20(Currency.unwrap(currency1)).approve(address(modifyLiquidityRouter), type(uint256).max);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, "");
     }
 }
 
-contract FirstWinsStrategyTest is ConflictResolverTest {
-    function test_beforeSwap_firstWinsDelta() public {
-        _verifyStrategyIsFirstWins();
-        _addLiquidity();
+// =============================================================================
+// Pure strategy unit tests — harness only, no PoolManager needed
+// =============================================================================
 
+contract ConflictResolverPureTest is Test {
+    ConflictResolverHarness internal harness;
+
+    function setUp() public {
+        harness = new ConflictResolverHarness();
+    }
+
+    // -------------------------------------------------------------------------
+    // _firstWins
+    // -------------------------------------------------------------------------
+
+    function test_firstWins_takesFirstNonZeroPair() public view {
+        int128[] memory s = _arr(0, 100, 300);
+        int128[] memory u = _arr(0, 200, 400);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 100, "should return first non-zero specified");
+        assertEq(ru, 200, "should return paired unspecified");
+    }
+
+    function test_firstWins_skipsLeadingZeroPairs() public view {
+        int128[] memory s = _arr(0, 0, 500);
+        int128[] memory u = _arr(0, 0, 600);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 500);
+        assertEq(ru, 600);
+    }
+
+    function test_firstWins_returnsZeroWhenAllZero() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    function test_firstWins_nonZeroSpecifiedWithZeroUnspecified() public view {
+        // Only specified is non-zero — the pair (100, 0) should still win.
+        int128[] memory s = _arr(0, 100, 300);
+        int128[] memory u = _arr(0, 0,   400);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 100, "non-zero specified triggers the win");
+        assertEq(ru, 0,   "paired unspecified is zero, that's fine");
+    }
+
+    function test_firstWins_nonZeroUnspecifiedWithZeroSpecified() public view {
+        // Only unspecified is non-zero — the pair (0, 200) should still win.
+        int128[] memory s = _arr(0, 0,   300);
+        int128[] memory u = _arr(0, 200, 400);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 0,   "paired specified is zero");
+        assertEq(ru, 200, "non-zero unspecified triggers the win");
+    }
+
+    function test_firstWins_singleElement_nonZero() public view {
+        int128[] memory s = new int128[](1);
+        int128[] memory u = new int128[](1);
+        s[0] = 42; u[0] = 99;
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 42);
+        assertEq(ru, 99);
+    }
+
+    function test_firstWins_singleElement_zero() public view {
+        int128[] memory s = new int128[](1);
+        int128[] memory u = new int128[](1);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    function test_firstWins_negativeDeltas() public view {
+        int128[] memory s = _arr(0, -100, -300);
+        int128[] memory u = _arr(0, -200, -400);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, -100);
+        assertEq(ru, -200);
+    }
+
+    function test_firstWins_emptyArray() public view {
+        int128[] memory s = new int128[](0);
+        int128[] memory u = new int128[](0);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // _lastWins
+    // -------------------------------------------------------------------------
+
+    function test_lastWins_takesLastNonZeroPair() public view {
+        int128[] memory s = _arr(100, 0,   300);
+        int128[] memory u = _arr(200, 0,   400);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 300);
+        assertEq(ru, 400);
+    }
+
+    function test_lastWins_skipsTrailingZeroPairs() public view {
+        int128[] memory s = _arr(500, 0, 0);
+        int128[] memory u = _arr(600, 0, 0);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 500);
+        assertEq(ru, 600);
+    }
+
+    function test_lastWins_returnsZeroWhenAllZero() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    function test_lastWins_nonZeroSpecifiedWithZeroUnspecified() public view {
+        int128[] memory s = _arr(100, 0,   300);
+        int128[] memory u = _arr(0,   0,   0  );
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 300);
+        assertEq(ru, 0);
+    }
+
+    function test_lastWins_nonZeroUnspecifiedWithZeroSpecified() public view {
+        int128[] memory s = _arr(0, 0,   0  );
+        int128[] memory u = _arr(0, 200, 400);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 400);
+    }
+
+    function test_lastWins_singleElement_nonZero() public view {
+        int128[] memory s = new int128[](1);
+        int128[] memory u = new int128[](1);
+        s[0] = 77; u[0] = 88;
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 77);
+        assertEq(ru, 88);
+    }
+
+    function test_lastWins_singleElement_zero() public view {
+        int128[] memory s = new int128[](1);
+        int128[] memory u = new int128[](1);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    function test_lastWins_negativeDeltas() public view {
+        int128[] memory s = _arr(-100, 0,   -300);
+        int128[] memory u = _arr(-200, 0,   -400);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, -300);
+        assertEq(ru, -400);
+    }
+
+    function test_lastWins_emptyArray() public view {
+        int128[] memory s = new int128[](0);
+        int128[] memory u = new int128[](0);
+
+        (int128 rs, int128 ru) = harness.exposed_lastWins(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // _additive
+    // -------------------------------------------------------------------------
+
+    function test_additive_sumsAllDeltas() public view {
+        int128[] memory s = _arr(10, 30, 50, 70);
+        int128[] memory u = _arr(20, 40, 60, 80);
+
+        (int128 rs, int128 ru) = harness.exposed_additive(s, u);
+
+        assertEq(rs, 160);
+        assertEq(ru, 200);
+    }
+
+    function test_additive_positiveAndNegativeDeltas() public view {
+        int128[] memory s = _arr(100, -30,  50);
+        int128[] memory u = _arr(-50,  70, -20);
+
+        (int128 rs, int128 ru) = harness.exposed_additive(s, u);
+
+        assertEq(rs, 120);
+        assertEq(ru, 0);
+    }
+
+    function test_additive_returnsZeroWhenAllZero() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+
+        (int128 rs, int128 ru) = harness.exposed_additive(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    function test_additive_singleElement() public view {
+        int128[] memory s = new int128[](1);
+        int128[] memory u = new int128[](1);
+        s[0] = 42; u[0] = -7;
+
+        (int128 rs, int128 ru) = harness.exposed_additive(s, u);
+
+        assertEq(rs, 42);
+        assertEq(ru, -7);
+    }
+
+    function test_additive_revertsOnSpecifiedOverflow() public {
+        int128[] memory s = new int128[](2);
+        int128[] memory u = new int128[](2);
+        s[0] = type(int128).max;
+        s[1] = 1;
+
+        vm.expectRevert(abi.encodeWithSignature("AdditiveOverflow()"));
+        harness.exposed_additive(s, u);
+    }
+
+    function test_additive_revertsOnSpecifiedUnderflow() public {
+        int128[] memory s = new int128[](2);
+        int128[] memory u = new int128[](2);
+        s[0] = type(int128).min;
+        s[1] = -1;
+
+        vm.expectRevert(abi.encodeWithSignature("AdditiveOverflow()"));
+        harness.exposed_additive(s, u);
+    }
+
+    function test_additive_revertsOnUnspecifiedOverflow() public {
+        int128[] memory s = new int128[](2);
+        int128[] memory u = new int128[](2);
+        u[0] = type(int128).max;
+        u[1] = 1;
+
+        vm.expectRevert(abi.encodeWithSignature("AdditiveOverflow()"));
+        harness.exposed_additive(s, u);
+    }
+
+    function test_additive_revertsOnUnspecifiedUnderflow() public {
+        int128[] memory s = new int128[](2);
+        int128[] memory u = new int128[](2);
+        u[0] = type(int128).min;
+        u[1] = -1;
+
+        vm.expectRevert(abi.encodeWithSignature("AdditiveOverflow()"));
+        harness.exposed_additive(s, u);
+    }
+
+    function test_additive_exactlyAtInt128Max_doesNotRevert() public view {
+        int128[] memory s = new int128[](2);
+        int128[] memory u = new int128[](2);
+        s[0] = type(int128).max / 2;
+        s[1] = type(int128).max / 2 + 1; // sums to exactly type(int128).max
+
+        (int128 rs,) = harness.exposed_additive(s, u);
+        assertEq(rs, type(int128).max);
+    }
+
+    function test_additive_emptyArray() public view {
+        int128[] memory s = new int128[](0);
+        int128[] memory u = new int128[](0);
+
+        (int128 rs, int128 ru) = harness.exposed_additive(s, u);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // _firstWinsBeforeSwap
+    // -------------------------------------------------------------------------
+
+    function test_firstWinsBeforeSwap_takesFirstNonZeroDelta() public view {
+        int128[] memory s = _arr(0, 100, 300);
+        int128[] memory u = _arr(0, 200, 400);
+        uint24[] memory f = _feeArr(0, 0, 0);
+
+        (int128 rs, int128 ru, uint24 rf) = harness.exposed_firstWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 100);
+        assertEq(ru, 200);
+        assertEq(rf, 0);
+    }
+
+    function test_firstWinsBeforeSwap_takesFirstNonZeroFee() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+        uint24[] memory f = _feeArr(0, 500, 1000);
+
+        (,, uint24 rf) = harness.exposed_firstWinsBeforeSwap(s, u, f);
+
+        assertEq(rf, 500);
+    }
+
+    function test_firstWinsBeforeSwap_deltaAndFeeResolvedIndependently() public view {
+        // Fee wins on index 0, delta wins on index 2.
+        int128[] memory s = _arr(0,   0, 300);
+        int128[] memory u = _arr(0,   0, 400);
+        uint24[] memory f = _feeArr(999, 0,  0);
+
+        (int128 rs, int128 ru, uint24 rf) = harness.exposed_firstWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 300,  "delta winner is index 2");
+        assertEq(ru, 400);
+        assertEq(rf, 999,  "fee winner is index 0");
+    }
+
+    function test_firstWinsBeforeSwap_returnsZeroWhenAllZero() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+        uint24[] memory f = _feeArr(0, 0, 0);
+
+        (int128 rs, int128 ru, uint24 rf) = harness.exposed_firstWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+        assertEq(rf, 0);
+    }
+
+    function test_firstWinsBeforeSwap_singleElement() public view {
+        int128[] memory s = new int128[](1);
+        int128[] memory u = new int128[](1);
+        uint24[] memory f = new uint24[](1);
+        s[0] = 50; u[0] = 60; f[0] = 3000;
+
+        (int128 rs, int128 ru, uint24 rf) = harness.exposed_firstWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 50);
+        assertEq(ru, 60);
+        assertEq(rf, 3000);
+    }
+
+    // -------------------------------------------------------------------------
+    // _lastWinsBeforeSwap
+    // -------------------------------------------------------------------------
+
+    function test_lastWinsBeforeSwap_takesLastNonZeroDelta() public view {
+        int128[] memory s = _arr(100, 0,   300);
+        int128[] memory u = _arr(200, 0,   400);
+        uint24[] memory f = _feeArr(0,  0,   0);
+
+        (int128 rs, int128 ru,) = harness.exposed_lastWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 300);
+        assertEq(ru, 400);
+    }
+
+    function test_lastWinsBeforeSwap_takesLastNonZeroFee() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+        uint24[] memory f = _feeArr(1000, 0, 2000);
+
+        (,, uint24 rf) = harness.exposed_lastWinsBeforeSwap(s, u, f);
+
+        assertEq(rf, 2000);
+    }
+
+    function test_lastWinsBeforeSwap_deltaAndFeeResolvedIndependently() public view {
+        // Delta wins on index 0, fee wins on index 2.
+        int128[] memory s = _arr(100, 0,   0);
+        int128[] memory u = _arr(200, 0,   0);
+        uint24[] memory f = _feeArr(0,  0, 999);
+
+        (int128 rs, int128 ru, uint24 rf) = harness.exposed_lastWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 100,  "delta winner is index 0 (only non-zero)");
+        assertEq(ru, 200);
+        assertEq(rf, 999,  "fee winner is index 2");
+    }
+
+    function test_lastWinsBeforeSwap_returnsZeroWhenAllZero() public view {
+        int128[] memory s = _arr(0, 0, 0);
+        int128[] memory u = _arr(0, 0, 0);
+        uint24[] memory f = _feeArr(0, 0, 0);
+
+        (int128 rs, int128 ru, uint24 rf) = harness.exposed_lastWinsBeforeSwap(s, u, f);
+
+        assertEq(rs, 0);
+        assertEq(ru, 0);
+        assertEq(rf, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // _additiveBeforeSwap
+    // -------------------------------------------------------------------------
+
+    function test_additiveBeforeSwap_sumsDeltas() public view {
+        int128[] memory s = _arr(10, 30);
+        int128[] memory u = _arr(20, 40);
+        uint24[] memory f = _feeArr(0, 0);
+
+        (int128 rs, int128 ru,) = harness.exposed_additiveBeforeSwap(s, u, f);
+
+        assertEq(rs, 40);
+        assertEq(ru, 60);
+    }
+
+    function test_additiveBeforeSwap_sumsFees() public view {
+        int128[] memory s = _arr(0, 0);
+        int128[] memory u = _arr(0, 0);
+        uint24[] memory f = _feeArr(1000, 2000);
+
+        (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
+
+        assertEq(rf, 3000);
+    }
+
+    function test_additiveBeforeSwap_zeroFeesProduceZeroOverride() public view {
+        int128[] memory s = _arr(10, 20);
+        int128[] memory u = _arr(30, 40);
+        uint24[] memory f = _feeArr(0, 0);
+
+        (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
+
+        assertEq(rf, 0, "zero fees should produce zero override, not revert");
+    }
+
+    function test_additiveBeforeSwap_exactlyAtMaxFee_doesNotRevert() public view {
+        int128[] memory s = _arr(0, 0);
+        int128[] memory u = _arr(0, 0);
+        uint24[] memory f = _feeArr(500_000, 500_000); // sums to exactly MAX_LP_FEE = 1_000_000
+
+        (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
+
+        assertEq(rf, 1_000_000);
+    }
+
+    function test_additiveBeforeSwap_revertsOnFeeOverflow() public {
+        int128[] memory s = _arr(0, 0);
+        int128[] memory u = _arr(0, 0);
+        uint24[] memory f = _feeArr(500_000, 600_000); // sum = 1_100_000 > MAX_LP_FEE
+
+        vm.expectRevert(abi.encodeWithSignature("AdditiveFeeOverflow(uint256)", 1_100_000));
+        harness.exposed_additiveBeforeSwap(s, u, f);
+    }
+
+    function test_additiveBeforeSwap_revertsOnDeltaOverflow() public {
+        int128[] memory s = new int128[](2);
+        int128[] memory u = new int128[](2);
+        uint24[] memory f = _feeArr(0, 0);
+        s[0] = type(int128).max;
+        s[1] = 1;
+
+        vm.expectRevert(abi.encodeWithSignature("AdditiveOverflow()"));
+        harness.exposed_additiveBeforeSwap(s, u, f);
+    }
+
+    // -------------------------------------------------------------------------
+    // Fuzz tests — pure strategy functions
+    // -------------------------------------------------------------------------
+
+    function test_fuzz_firstWins_neverReturnsUnvisitedIndex(
+        int128 s0, int128 u0,
+        int128 s1, int128 u1,
+        int128 s2, int128 u2
+    ) public view {
+        int128[] memory s = _arr(s0, s1, s2);
+        int128[] memory u = _arr(u0, u1, u2);
+
+        (int128 rs, int128 ru) = harness.exposed_firstWins(s, u);
+
+        // Result must be one of the input pairs or (0,0).
+        bool valid = (rs == s0 && ru == u0)
+                  || (rs == s1 && ru == u1)
+                  || (rs == s2 && ru == u2)
+                  || (rs == 0  && ru == 0 );
+        assertTrue(valid, "result must be one of the input pairs");
+    }
+
+    function test_fuzz_additive_sumsCorrectly(int64 a, int64 b, int64 c) public view {
+        // Use int64 inputs to guarantee no int128 overflow.
+        int128[] memory s = _arr(int128(a), int128(b), int128(c));
+        int128[] memory u = new int128[](3);
+
+        (int128 rs,) = harness.exposed_additive(s, u);
+
+        assertEq(rs, int128(a) + int128(b) + int128(c));
+    }
+
+    function test_fuzz_additiveBeforeSwap_feeSumCorrect(
+        uint16 f0,
+        uint16 f1
+    ) public view {
+        // uint16 inputs: max sum = 2 * 65535 = 131070, well within MAX_LP_FEE.
+        int128[] memory s = _arr(0, 0);
+        int128[] memory u = _arr(0, 0);
+        uint24[] memory f = _feeArr(uint24(f0), uint24(f1));
+
+        (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
+
+        assertEq(rf, uint24(f0) + uint24(f1));
+    }
+
+    // -------------------------------------------------------------------------
+    // Array helpers
+    // -------------------------------------------------------------------------
+
+    function _arr(int128 a, int128 b) internal pure returns (int128[] memory r) {
+        r = new int128[](2); r[0] = a; r[1] = b;
+    }
+
+    function _arr(int128 a, int128 b, int128 c) internal pure returns (int128[] memory r) {
+        r = new int128[](3); r[0] = a; r[1] = b; r[2] = c;
+    }
+
+    function _arr(int128 a, int128 b, int128 c, int128 d) internal pure returns (int128[] memory r) {
+        r = new int128[](4); r[0] = a; r[1] = b; r[2] = c; r[3] = d;
+    }
+
+    function _feeArr(uint24 a, uint24 b) internal pure returns (uint24[] memory r) {
+        r = new uint24[](2); r[0] = a; r[1] = b;
+    }
+
+    function _feeArr(uint24 a, uint24 b, uint24 c) internal pure returns (uint24[] memory r) {
+        r = new uint24[](3); r[0] = a; r[1] = b; r[2] = c;
+    }
+}
+
+// =============================================================================
+// Integration tests — strategies exercised through a live SuperHook + PoolManager
+// =============================================================================
+
+contract FirstWinsIntegrationTest is ConflictResolverTestBase {
+    function setUp() public override {
+        super.setUp();
+        _verifyStrategy(ConflictStrategy.FIRST_WINS);
+    }
+
+    function test_beforeSwap_allSubHooksExecute() public {
+        _addLiquidity();
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-
         mockA.setBeforeSwapResult(0, 0, 0);
         mockB.setBeforeSwapResult(0, 0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
-
-        assertEq(mockA.beforeSwapCount(), 0);
-        assertEq(mockB.beforeSwapCount(), 0);
 
         swap(poolKey, true, -1000, "");
 
-        assertEq(mockA.beforeSwapCount(), 1);
-        assertEq(mockB.beforeSwapCount(), 1);
+        // Under FIRST_WINS all sub-hooks still execute — only the winning delta differs.
+        assertEq(mockA.beforeSwapCount(), 1, "mockA must execute");
+        assertEq(mockB.beforeSwapCount(), 1, "mockB must execute");
     }
 
-    function test_beforeSwap_firstWinsFee() public {
-        _verifyStrategyIsFirstWins();
+    function test_beforeSwap_firstNonZeroFeeWins() public {
         _addLiquidity();
 
+        // Swap with only mockA (fee = 1000).
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
         mockA.setBeforeSwapResult(0, 0, 1000);
         _addSubHook(address(mockA));
+        BalanceDelta deltaA = swap(poolKey, true, -1000, "");
 
-        BalanceDelta deltaOnlyFirstHook = swap(poolKey, true, -1000, "");
-
-        assertEq(mockA.beforeSwapCount(), 1);
-
+        // Add mockB (fee = 2000) — FIRST_WINS means mockA's fee (1000) should still apply.
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
         mockB.setBeforeSwapResult(0, 0, 2000);
         _addSubHook(address(mockB));
-
-        BalanceDelta deltaBothHooks = swap(poolKey, true, -1000, "");
+        BalanceDelta deltaAB = swap(poolKey, true, -1000, "");
 
         assertEq(mockA.beforeSwapCount(), 2);
         assertEq(mockB.beforeSwapCount(), 1);
-
-        assertEq(
-            deltaOnlyFirstHook.amount1(),
-            deltaBothHooks.amount1(),
-            "FIRST_WINS should use first hook's fee (1000), not last (2000)"
-        );
+        // Same fee applied → same output amount.
+        assertEq(deltaA.amount1(), deltaAB.amount1(), "first hook fee should win");
     }
 
-    function test_beforeSwap_firstNonZeroWins() public {
-        _verifyStrategyIsFirstWins();
+    function test_afterSwap_allSubHooksExecute() public {
         _addLiquidity();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockC = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockC.setPermissions(false, false, false, false, false, false, true, false, false, false);
-
-        mockA.setBeforeSwapResult(0, 0, 0);
-        mockB.setBeforeSwapResult(0, 0, 0);
-        mockC.setBeforeSwapResult(0, 0, 0);
-
-        _addSubHook(address(mockA));
-        _addSubHook(address(mockB));
-        _addSubHook(address(mockC));
-
-        swap(poolKey, true, -1000, "");
-
-        assertEq(mockA.beforeSwapCount(), 1);
-        assertEq(mockB.beforeSwapCount(), 1);
-        assertEq(mockC.beforeSwapCount(), 1);
-
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 100;
-        unspecifieds[1] = 200;
-        specifieds[2] = 300;
-        unspecifieds[2] = 400;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_firstWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 100, "Should return first non-zero specified delta");
-        assertEq(resultUnspecified, 200, "Should return first non-zero unspecified delta");
-    }
-
-    function test_firstWins_skipsZeroDeltas() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 500;
-        unspecifieds[2] = 600;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_firstWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 500, "Should skip zeros and return third value");
-        assertEq(resultUnspecified, 600);
-    }
-
-    function test_firstWins_returnsZeroWhenAllZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 0;
-        unspecifieds[2] = 0;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_firstWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 0, "Should return zero when all are zero");
-        assertEq(resultUnspecified, 0);
-    }
-
-    function test_firstWins_onlySpecifiedNonZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 100;
-        unspecifieds[1] = 0;
-        specifieds[2] = 300;
-        unspecifieds[2] = 400;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_firstWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 100, "Should return first with non-zero specified");
-        assertEq(resultUnspecified, 0, "Should return unspecified delta as well");
-    }
-
-    function test_firstWins_onlyUnspecifiedNonZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 200;
-        specifieds[2] = 300;
-        unspecifieds[2] = 400;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_firstWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 0, "Should return specified delta as zero");
-        assertEq(resultUnspecified, 200, "Should return first with non-zero unspecified");
-    }
-
-    function test_afterSwap_firstWins() public {
-        _verifyStrategyIsFirstWins();
-        _addLiquidity();
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, false, true, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, false, true, false, false);
-
         mockA.setAfterSwapResult(0);
         mockB.setAfterSwapResult(0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
@@ -301,88 +753,55 @@ contract FirstWinsStrategyTest is ConflictResolverTest {
         assertEq(mockB.afterSwapCount(), 1);
     }
 
-    function test_afterAddLiquidity_firstWins() public {
-        _verifyStrategyIsFirstWins();
-
+    function test_afterAddLiquidity_allSubHooksExecute() public {
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, true, false, false, false, false, false, false);
-        mockB.setPermissions(false, false, false, true, false, false, false, false, false, false);
-
         mockA.setAfterLiquidityResult(0, 0);
         mockB.setAfterLiquidityResult(0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
+        _addLiquidity();
 
         assertEq(mockA.afterAddLiquidityCount(), 1);
         assertEq(mockB.afterAddLiquidityCount(), 1);
     }
 
-    function test_afterRemoveLiquidity_firstWins() public {
-        _verifyStrategyIsFirstWins();
-
+    function test_afterRemoveLiquidity_allSubHooksExecute() public {
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, true, false, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, true, false, false, false, false);
-
         mockA.setAfterLiquidityResult(0, 0);
         mockB.setAfterLiquidityResult(0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
+        _addLiquidity();
         modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
 
         assertEq(mockA.afterRemoveLiquidityCount(), 1);
         assertEq(mockB.afterRemoveLiquidityCount(), 1);
     }
 
-    function test_returnsZeroWhenAllZero() public {
-        _verifyStrategyIsFirstWins();
+    function test_noSubHooks_swapSucceeds() public {
+        _addLiquidity();
+        // Should not revert — zero sub-hooks means zero deltas under any strategy.
+        swap(poolKey, true, -1000, "");
+    }
+}
 
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, true, false, false, false, false, false, false);
-        mockB.setPermissions(false, false, false, true, false, false, false, false, false, false);
-
-        mockA.setAfterLiquidityResult(0, 0);
-        mockB.setAfterLiquidityResult(0, 0);
-
-        _addSubHook(address(mockA));
-        _addSubHook(address(mockB));
-
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
-        assertEq(mockA.afterAddLiquidityCount(), 1);
-        assertEq(mockB.afterAddLiquidityCount(), 1);
+contract LastWinsIntegrationTest is ConflictResolverTestBase {
+    function setUp() public override {
+        super.setUp();
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        _verifyStrategy(ConflictStrategy.LAST_WINS);
     }
 
-    function test_fuzz_firstWins(int128 delta0, int128 delta1) public {
-        _verifyStrategyIsFirstWins();
+    function test_beforeSwap_allSubHooksExecute() public {
         _addLiquidity();
-
-        vm.assume(delta0 != 0 || delta1 != 0);
-        vm.assume(delta0 > -1000 && delta0 < 1000);
-        vm.assume(delta1 > -1000 && delta1 < 1000);
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-
         mockA.setBeforeSwapResult(0, 0, 0);
         mockB.setBeforeSwapResult(0, 0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
@@ -391,80 +810,31 @@ contract FirstWinsStrategyTest is ConflictResolverTest {
         assertEq(mockA.beforeSwapCount(), 1);
         assertEq(mockB.beforeSwapCount(), 1);
     }
-}
 
-contract LastWinsStrategyTest is ConflictResolverTest {
-    function _setStrategyLastWins() internal {
-        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
-    }
-
-    function _verifyStrategyIsLastWins() internal view {
-        PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint8(config.strategy), uint8(ConflictStrategy.LAST_WINS));
-    }
-
-    function test_beforeSwap_lastWinsDelta() public {
-        _setStrategyLastWins();
-        _verifyStrategyIsLastWins();
+    function test_beforeSwap_lastNonZeroFeeWins() public {
         _addLiquidity();
 
+        // mockA fee = 1000, mockB fee = 2000 → last wins = 2000.
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockA.setBeforeSwapResult(0, 0, 0);
-        _addSubHook(address(mockA));
-
-        BalanceDelta deltaOnlyMockA = swap(poolKey, true, -1000, "");
-
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setBeforeSwapResult(0, 0, 2000);
-        _addSubHook(address(mockB));
-
-        BalanceDelta deltaWithMockB = swap(poolKey, true, -1000, "");
-
-        assertEq(deltaOnlyMockA.amount1(), deltaWithMockB.amount1(), "LAST_WINS: last hook's fee should win");
-    }
-
-    function test_beforeSwap_lastWinsFee() public {
-        _setStrategyLastWins();
-        _verifyStrategyIsLastWins();
-        _addLiquidity();
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
         mockA.setBeforeSwapResult(0, 0, 1000);
         _addSubHook(address(mockA));
-
-        BalanceDelta deltaOnlyFirstHook = swap(poolKey, true, -1000, "");
+        BalanceDelta deltaA = swap(poolKey, true, -1000, "");
 
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
         mockB.setBeforeSwapResult(0, 0, 2000);
         _addSubHook(address(mockB));
+        BalanceDelta deltaAB = swap(poolKey, true, -1000, "");
 
-        BalanceDelta deltaBothHooks = swap(poolKey, true, -1000, "");
-
-        assertEq(
-            deltaOnlyFirstHook.amount1(),
-            deltaBothHooks.amount1(),
-            "LAST_WINS should use last hook's fee (2000), not first (1000)"
-        );
+        // Different fee → different output — the two deltas should differ.
+        assertNotEq(deltaA.amount1(), deltaAB.amount1(), "last hook fee (2000) should differ from first (1000)");
     }
 
-    function test_afterSwap_lastWins() public {
-        _setStrategyLastWins();
-        _verifyStrategyIsLastWins();
+    function test_afterSwap_allSubHooksExecute() public {
         _addLiquidity();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, false, true, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, false, true, false, false);
-
         mockA.setAfterSwapResult(0);
         mockB.setAfterSwapResult(0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
@@ -474,367 +844,49 @@ contract LastWinsStrategyTest is ConflictResolverTest {
         assertEq(mockB.afterSwapCount(), 1);
     }
 
-    function test_afterAddLiquidity_lastWins() public {
-        _setStrategyLastWins();
-        _verifyStrategyIsLastWins();
-
+    function test_afterAddLiquidity_allSubHooksExecute() public {
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, true, false, false, false, false, false, false);
-        mockB.setPermissions(false, false, false, true, false, false, false, false, false, false);
-
         mockA.setAfterLiquidityResult(0, 0);
         mockB.setAfterLiquidityResult(0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
+        _addLiquidity();
 
         assertEq(mockA.afterAddLiquidityCount(), 1);
         assertEq(mockB.afterAddLiquidityCount(), 1);
     }
 
-    function test_afterRemoveLiquidity_lastWins() public {
-        _setStrategyLastWins();
-        _verifyStrategyIsLastWins();
-
+    function test_afterRemoveLiquidity_allSubHooksExecute() public {
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, true, false, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, true, false, false, false, false);
-
         mockA.setAfterLiquidityResult(0, 0);
         mockB.setAfterLiquidityResult(0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
+        _addLiquidity();
         modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
 
         assertEq(mockA.afterRemoveLiquidityCount(), 1);
         assertEq(mockB.afterRemoveLiquidityCount(), 1);
     }
-
-    function test_returnsZeroWhenAllZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 0;
-        unspecifieds[2] = 0;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_lastWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 0, "Should return zero when all are zero");
-        assertEq(resultUnspecified, 0);
-    }
-
-    function test_fuzz_lastWins(int128 delta0, int128 delta1) public {
-        _setStrategyLastWins();
-        _verifyStrategyIsLastWins();
-        _addLiquidity();
-
-        vm.assume(delta0 != 0 || delta1 != 0);
-        vm.assume(delta0 > -1000 && delta0 < 1000);
-        vm.assume(delta1 > -1000 && delta1 < 1000);
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-
-        mockA.setBeforeSwapResult(0, 0, 0);
-        mockB.setBeforeSwapResult(0, 0, 0);
-
-        _addSubHook(address(mockA));
-        _addSubHook(address(mockB));
-
-        swap(poolKey, true, -1000, "");
-
-        assertEq(mockA.beforeSwapCount(), 1);
-        assertEq(mockB.beforeSwapCount(), 1);
-    }
-
-    function test_lastWins_returnsLastNonZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 100;
-        unspecifieds[0] = 200;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 300;
-        unspecifieds[2] = 400;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_lastWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 300, "Should return last non-zero specified delta");
-        assertEq(resultUnspecified, 400, "Should return last non-zero unspecified delta");
-    }
-
-    function test_lastWins_skipsZeroDeltas() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 500;
-        unspecifieds[2] = 600;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_lastWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 500, "Should return last non-zero value");
-        assertEq(resultUnspecified, 600);
-    }
-
-    function test_lastWins_onlySpecifiedNonZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 100;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 300;
-        unspecifieds[2] = 0;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_lastWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 300, "Should return last non-zero specified");
-        assertEq(resultUnspecified, 0, "Should return unspecified delta as zero");
-    }
-
-    function test_lastWins_onlyUnspecifiedNonZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 200;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 0;
-        unspecifieds[2] = 400;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_lastWins(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 0, "Should return specified delta as zero");
-        assertEq(resultUnspecified, 400, "Should return last non-zero unspecified");
-    }
 }
 
-contract AdditiveStrategyTest is ConflictResolverTest {
-    function _setStrategyAdditive() internal {
+contract AdditiveIntegrationTest is ConflictResolverTestBase {
+    function setUp() public override {
+        super.setUp();
         superHook.updateStrategy(poolId, ConflictStrategy.ADDITIVE, address(0));
+        _verifyStrategy(ConflictStrategy.ADDITIVE);
     }
 
-    function _verifyStrategyIsAdditive() internal view {
-        PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint8(config.strategy), uint8(ConflictStrategy.ADDITIVE));
-    }
-
-    function test_beforeSwap_additiveDeltas() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](2);
-        int128[] memory unspecifieds = new int128[](2);
-
-        specifieds[0] = 10;
-        unspecifieds[0] = 20;
-        specifieds[1] = 30;
-        unspecifieds[1] = 40;
-
-        uint24[] memory fees = new uint24[](2);
-        fees[0] = 0;
-        fees[1] = 0;
-
-        (int128 resultSpecified, int128 resultUnspecified,) =
-            harness.exposed_additiveBeforeSwap(specifieds, unspecifieds, fees);
-
-        assertEq(resultSpecified, 40, "Should sum specified deltas");
-        assertEq(resultUnspecified, 60, "Should sum unspecified deltas");
-    }
-
-    function test_beforeSwap_additiveFees() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](2);
-        int128[] memory unspecifieds = new int128[](2);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-
-        uint24[] memory fees = new uint24[](2);
-        fees[0] = 1000;
-        fees[1] = 2000;
-
-        (,, uint24 resultFee) = harness.exposed_additiveBeforeSwap(specifieds, unspecifieds, fees);
-
-        assertEq(resultFee, 3000, "Should sum fees");
-    }
-
-    function test_beforeSwap_feeOverflow() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](2);
-        int128[] memory unspecifieds = new int128[](2);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-
-        uint24[] memory fees = new uint24[](2);
-        fees[0] = 500000;
-        fees[1] = 600000;
-
-        vm.expectRevert(abi.encodeWithSignature("AdditiveFeeOverflow(uint256)", 1100000));
-        harness.exposed_additiveBeforeSwap(specifieds, unspecifieds, fees);
-    }
-
-    function test_afterSwap_additive() public {
-        _setStrategyAdditive();
-        _verifyStrategyIsAdditive();
+    function test_beforeSwap_allSubHooksExecute() public {
         _addLiquidity();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, false, true, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, false, true, false, false);
-
-        mockA.setAfterSwapResult(0);
-        mockB.setAfterSwapResult(0);
-
-        _addSubHook(address(mockA));
-        _addSubHook(address(mockB));
-
-        swap(poolKey, true, -1000, "");
-
-        assertEq(mockA.afterSwapCount(), 1);
-        assertEq(mockB.afterSwapCount(), 1);
-    }
-
-    function test_afterAddLiquidity_additive() public {
-        _setStrategyAdditive();
-        _verifyStrategyIsAdditive();
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, true, false, false, false, false, false, false);
-        mockB.setPermissions(false, false, false, true, false, false, false, false, false, false);
-
-        mockA.setAfterLiquidityResult(0, 0);
-        mockB.setAfterLiquidityResult(0, 0);
-
-        _addSubHook(address(mockA));
-        _addSubHook(address(mockB));
-
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
-        assertEq(mockA.afterAddLiquidityCount(), 1);
-        assertEq(mockB.afterAddLiquidityCount(), 1);
-    }
-
-    function test_afterRemoveLiquidity_additive() public {
-        _setStrategyAdditive();
-        _verifyStrategyIsAdditive();
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, true, false, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, true, false, false, false, false);
-
-        mockA.setAfterLiquidityResult(0, 0);
-        mockB.setAfterLiquidityResult(0, 0);
-
-        _addSubHook(address(mockA));
-        _addSubHook(address(mockB));
-
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
-        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
-
-        assertEq(mockA.afterRemoveLiquidityCount(), 1);
-        assertEq(mockB.afterRemoveLiquidityCount(), 1);
-    }
-
-    function test_deltaOverflow() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](2);
-        int128[] memory unspecifieds = new int128[](2);
-
-        specifieds[0] = type(int128).max;
-        unspecifieds[0] = 0;
-        specifieds[1] = 1;
-        unspecifieds[1] = 0;
-
-        vm.expectRevert(abi.encodeWithSignature("AdditiveOverflow()"));
-        harness.exposed_additive(specifieds, unspecifieds);
-    }
-
-    function test_returnsZeroWhenAllZero() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
-
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
-
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-        specifieds[2] = 0;
-        unspecifieds[2] = 0;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_additive(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 0, "Should return zero when all are zero");
-        assertEq(resultUnspecified, 0);
-    }
-
-    function test_fuzz_additive(int128 delta0, int128 delta1) public {
-        _setStrategyAdditive();
-        _verifyStrategyIsAdditive();
-        _addLiquidity();
-
-        vm.assume(delta0 != 0 || delta1 != 0);
-        vm.assume(delta0 > -100 && delta0 < 100);
-        vm.assume(delta1 > -100 && delta1 < 100);
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-
         mockA.setBeforeSwapResult(0, 0, 0);
         mockB.setBeforeSwapResult(0, 0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
@@ -844,105 +896,79 @@ contract AdditiveStrategyTest is ConflictResolverTest {
         assertEq(mockB.beforeSwapCount(), 1);
     }
 
-    function test_additive_sumsMultipleDeltas() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
+    function test_afterSwap_allSubHooksExecute() public {
+        _addLiquidity();
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterSwapResult(0);
+        mockB.setAfterSwapResult(0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
 
-        int128[] memory specifieds = new int128[](4);
-        int128[] memory unspecifieds = new int128[](4);
+        swap(poolKey, true, -1000, "");
 
-        specifieds[0] = 10;
-        unspecifieds[0] = 20;
-        specifieds[1] = 30;
-        unspecifieds[1] = 40;
-        specifieds[2] = 50;
-        unspecifieds[2] = 60;
-        specifieds[3] = 70;
-        unspecifieds[3] = 80;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_additive(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 160, "Should sum all specified deltas");
-        assertEq(resultUnspecified, 200, "Should sum all unspecified deltas");
+        assertEq(mockA.afterSwapCount(), 1);
+        assertEq(mockB.afterSwapCount(), 1);
     }
 
-    function test_additive_positiveAndNegativeDeltas() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
+    function test_afterAddLiquidity_allSubHooksExecute() public {
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        mockB.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
 
-        int128[] memory specifieds = new int128[](3);
-        int128[] memory unspecifieds = new int128[](3);
+        _addLiquidity();
 
-        specifieds[0] = 100;
-        unspecifieds[0] = -50;
-        specifieds[1] = -30;
-        unspecifieds[1] = 70;
-        specifieds[2] = 50;
-        unspecifieds[2] = -20;
-
-        (int128 resultSpecified, int128 resultUnspecified) = harness.exposed_additive(specifieds, unspecifieds);
-
-        assertEq(resultSpecified, 120, "Should sum positive and negative specified");
-        assertEq(resultUnspecified, 0, "Should sum positive and negative unspecified");
+        assertEq(mockA.afterAddLiquidityCount(), 1);
+        assertEq(mockB.afterAddLiquidityCount(), 1);
     }
 
-    function test_additiveBeforeSwap_feeUnderMax() public {
-        ConflictResolverHarness harness = new ConflictResolverHarness();
+    function test_afterRemoveLiquidity_allSubHooksExecute() public {
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        mockB.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
 
-        int128[] memory specifieds = new int128[](2);
-        int128[] memory unspecifieds = new int128[](2);
+        _addLiquidity();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
 
-        specifieds[0] = 0;
-        unspecifieds[0] = 0;
-        specifieds[1] = 0;
-        unspecifieds[1] = 0;
-
-        uint24[] memory fees = new uint24[](2);
-        fees[0] = 400000;
-        fees[1] = 500000;
-
-        (,, uint24 resultFee) = harness.exposed_additiveBeforeSwap(specifieds, unspecifieds, fees);
-
-        assertEq(resultFee, 900000, "Should sum fees under MAX_LP_FEE");
+        assertEq(mockA.afterRemoveLiquidityCount(), 1);
+        assertEq(mockB.afterRemoveLiquidityCount(), 1);
     }
 }
 
-contract CustomStrategyTest is ConflictResolverTest {
-    function _setStrategyCustom(address customResolver) internal {
-        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, customResolver);
+contract CustomStrategyIntegrationTest is ConflictResolverTestBase {
+    MockCustomResolver internal customResolver;
+
+    function setUp() public override {
+        super.setUp();
+        customResolver = new MockCustomResolver();
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(customResolver));
+        _verifyStrategy(ConflictStrategy.CUSTOM);
     }
 
-    function _verifyStrategyIsCustom() internal view {
-        PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint8(config.strategy), uint8(ConflictStrategy.CUSTOM));
-    }
-
-    function test_beforeSwap_customResolver() public {
-        MockCustomResolver customResolver = new MockCustomResolver();
+    function test_beforeSwap_customResolver_subHookExecutes() public {
+        _addLiquidity();
         customResolver.setBeforeSwapResult(0, 0, 0);
 
-        _setStrategyCustom(address(customResolver));
-        _verifyStrategyIsCustom();
-        _addLiquidity();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
         mockA.setBeforeSwapResult(0, 0, 0);
         _addSubHook(address(mockA));
 
         swap(poolKey, true, -1000, "");
 
-        assertEq(mockA.beforeSwapCount(), 1);
+        assertEq(mockA.beforeSwapCount(), 1, "sub-hook must still execute under CUSTOM");
     }
 
-    function test_afterSwap_customResolver() public {
-        MockCustomResolver customResolver = new MockCustomResolver();
+    function test_afterSwap_customResolver_subHookExecutes() public {
+        _addLiquidity();
         customResolver.setAfterSwapResult(0, 0);
 
-        _setStrategyCustom(address(customResolver));
-        _verifyStrategyIsCustom();
-        _addLiquidity();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, false, false, true, false, false);
         mockA.setAfterSwapResult(0);
         _addSubHook(address(mockA));
 
@@ -951,37 +977,26 @@ contract CustomStrategyTest is ConflictResolverTest {
         assertEq(mockA.afterSwapCount(), 1);
     }
 
-    function test_afterAddLiquidity_customResolver() public {
-        MockCustomResolver customResolver = new MockCustomResolver();
+    function test_afterAddLiquidity_customResolver_subHookExecutes() public {
         customResolver.setAfterAddLiquidityResult(0, 0);
 
-        _setStrategyCustom(address(customResolver));
-        _verifyStrategyIsCustom();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, true, false, false, false, false, false, false);
         mockA.setAfterLiquidityResult(0, 0);
         _addSubHook(address(mockA));
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
+        _addLiquidity();
 
         assertEq(mockA.afterAddLiquidityCount(), 1);
     }
 
-    function test_afterRemoveLiquidity_customResolver() public {
-        MockCustomResolver customResolver = new MockCustomResolver();
+    function test_afterRemoveLiquidity_customResolver_subHookExecutes() public {
         customResolver.setAfterRemoveLiquidityResult(0, 0);
 
-        _setStrategyCustom(address(customResolver));
-        _verifyStrategyIsCustom();
-
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, true, false, false, false, false);
         mockA.setAfterLiquidityResult(0, 0);
         _addSubHook(address(mockA));
 
-        modifyLiquidityRouter.modifyLiquidity{value: 1e18}(poolKey, LIQUIDITY_PARAMS, "");
-
+        _addLiquidity();
         modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
 
         assertEq(mockA.afterRemoveLiquidityCount(), 1);
@@ -992,41 +1007,14 @@ contract CustomStrategyTest is ConflictResolverTest {
         superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(0));
     }
 
-    function test_customResolver_returnsCustomValues() public {
-        MockCustomResolver customResolver = new MockCustomResolver();
-        customResolver.setBeforeSwapResult(0, 0, 0);
-
-        _setStrategyCustom(address(customResolver));
-        _verifyStrategyIsCustom();
+    function test_multipleSubHooks_allExecuteUnderCustom() public {
         _addLiquidity();
-
-        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockA.setBeforeSwapResult(0, 0, 0);
-        _addSubHook(address(mockA));
-
-        swap(poolKey, true, -1000, "");
-
-        assertEq(mockA.beforeSwapCount(), 1);
-    }
-
-    function test_customResolver_multipleHooks() public {
-        MockCustomResolver customResolver = new MockCustomResolver();
         customResolver.setBeforeSwapResult(0, 0, 0);
-
-        _setStrategyCustom(address(customResolver));
-        _verifyStrategyIsCustom();
-        _addLiquidity();
 
         MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
         MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
-
-        mockA.setPermissions(false, false, false, false, false, false, true, false, false, false);
-        mockB.setPermissions(false, false, false, false, false, false, true, false, false, false);
-
         mockA.setBeforeSwapResult(0, 0, 0);
         mockB.setBeforeSwapResult(0, 0, 0);
-
         _addSubHook(address(mockA));
         _addSubHook(address(mockB));
 
@@ -1034,5 +1022,44 @@ contract CustomStrategyTest is ConflictResolverTest {
 
         assertEq(mockA.beforeSwapCount(), 1);
         assertEq(mockB.beforeSwapCount(), 1);
+    }
+}
+
+contract UpdateStrategyTest is ConflictResolverTestBase {
+    function test_updateStrategy_fromFirstWinsToLastWins() public {
+        _verifyStrategy(ConflictStrategy.FIRST_WINS);
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        _verifyStrategy(ConflictStrategy.LAST_WINS);
+    }
+
+    function test_updateStrategy_fromFirstWinsToAdditive() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.ADDITIVE, address(0));
+        _verifyStrategy(ConflictStrategy.ADDITIVE);
+    }
+
+    function test_updateStrategy_toCustom_requiresResolver() public {
+        vm.expectRevert(abi.encodeWithSignature("CustomResolverRequired()"));
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(0));
+    }
+
+    function test_updateStrategy_toCustom_withResolver() public {
+        MockCustomResolver resolver = new MockCustomResolver();
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(resolver));
+        _verifyStrategy(ConflictStrategy.CUSTOM);
+
+        PoolHookConfig memory cfg = superHook.getPoolConfig(poolId);
+        assertEq(cfg.customResolver, address(resolver));
+    }
+
+    function test_updateStrategy_revertsIfNotAdmin() public {
+        vm.prank(address(0xdead));
+        vm.expectRevert();
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+    }
+
+    function test_updateStrategy_revertsIfLocked() public {
+        superHook.lockPool(poolId);
+        vm.expectRevert(abi.encodeWithSignature("PoolIsLocked(bytes32)", PoolId.unwrap(poolId)));
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
     }
 }
