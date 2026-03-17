@@ -4,15 +4,16 @@ pragma solidity ^0.8.24;
 import "forge-std/console.sol";
 import "forge-std/Script.sol";
 
-import {HookMiner} from "../test/HookMiner.sol";
-import {SuperHook} from "../src/SuperHook.sol";
+import {HookMiner} from "../../test/HookMiner.sol";
+import {GeomeanOracle} from "./GeomeanOracle.sol";
 
-contract SuperHookAddressMiner is Script {
-    address constant POOL_MANAGER_ADDRESS = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
+contract GeomeanOracleSubHookAddressMiner is Script {
+    address constant POOL_MANAGER_ADDRESS =
+        0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
 
-    function run() external {
+    function run() external view {
         bytes memory initCode = abi.encodePacked(
-            type(SuperHook).creationCode,
+            type(GeomeanOracle).creationCode,
             abi.encode(POOL_MANAGER_ADDRESS)
         );
 

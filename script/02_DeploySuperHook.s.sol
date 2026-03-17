@@ -17,7 +17,7 @@ contract SuperHookDeployer is Script {
         uint256 deployerPrivKey = vm.envUint("KEY");
         vm.startBroadcast(deployerPrivKey);
 
-        uint256 salt = 21007;
+        uint256 salt = vm.envUint("SUPERHOOK_SALT");
         bytes32 saltBytes = bytes32(salt);
 
         SuperHook superHook = new SuperHook{salt: saltBytes}(IPoolManager(POOL_MANAGER_ADDRESS));
