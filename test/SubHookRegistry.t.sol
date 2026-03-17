@@ -868,3 +868,69 @@ contract SubHookRegistryViewsTest is SubHookRegistryTestBase {
         assertFalse(config.locked);
     }
 }
+
+
+// =============================================================================
+// PoolNotRegistered — covers the poolExists modifier revert branch
+// across every function that guards with it.
+// =============================================================================
+
+contract SubHookRegistryPoolNotRegisteredTest is SubHookRegistryTestBase {
+
+    /// @dev Returns a PoolId for a pool key that has never been initialized,
+    ///      so its admin is address(0) and poolExists will revert.
+    function _unregisteredId() internal view returns (PoolId) {
+        return PoolKey({
+            currency0:   currency0,
+            currency1:   currency1,
+            hooks:       superHook,
+            fee:         9999,
+            tickSpacing: 200
+        }).toId();
+    }
+
+    function test_addSubHook_revertsIfPoolNotRegistered() public {
+        PoolId id = _unregisteredId();
+        MockSubHook hook = _deployMockSubHook(manager);
+        vm.expectRevert(abi.encodeWithSelector(PoolNotRegistered.selector, id));
+        vm.prank(address(0));
+        superHook.addSubHook(id, address(hook), 0);
+    }
+
+    function test_removeSubHook_revertsIfPoolNotRegistered() public {
+        PoolId id = _unregisteredId();
+        MockSubHook hook = _deployMockSubHook(manager);
+        vm.expectRevert(abi.encodeWithSelector(PoolNotRegistered.selector, id));
+        vm.prank(address(0));
+        superHook.removeSubHook(id, address(hook));
+    }
+
+    function test_reorderSubHooks_revertsIfPoolNotRegistered() public {
+        PoolId id = _unregisteredId();
+        address[] memory order = new address[](0);
+        vm.expectRevert(abi.encodeWithSelector(PoolNotRegistered.selector, id));
+        vm.prank(address(0));
+        superHook.reorderSubHooks(id, order);
+    }
+
+    function test_updateStrategy_revertsIfPoolNotRegistered() public {
+        PoolId id = _unregisteredId();
+        vm.expectRevert(abi.encodeWithSelector(PoolNotRegistered.selector, id));
+        vm.prank(address(0));
+        superHook.updateStrategy(id, ConflictStrategy.LAST_WINS, address(0));
+    }
+
+    function test_lockPool_revertsIfPoolNotRegistered() public {
+        PoolId id = _unregisteredId();
+        vm.expectRevert(abi.encodeWithSelector(PoolNotRegistered.selector, id));
+        vm.prank(address(0));
+        superHook.lockPool(id);
+    }
+
+    function test_transferAdmin_revertsIfPoolNotRegistered() public {
+        PoolId id = _unregisteredId();
+        vm.expectRevert(abi.encodeWithSelector(PoolNotRegistered.selector, id));
+        vm.prank(address(0));
+        superHook.transferAdmin(id, alice);
+    }
+}

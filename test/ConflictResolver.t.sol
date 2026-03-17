@@ -12,6 +12,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/types/Currency.sol";
+import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 
 import {SuperHook} from "../src/SuperHook.sol";
 import {PoolHookConfig, ConflictStrategy} from "../src/types/PoolHookConfig.sol";
@@ -22,8 +23,6 @@ import {MockSubHook} from "./mocks/MockSubHook.sol";
 import {ConflictResolverHarness} from "./mocks/ConflictResolverHarness.sol";
 import {MockCustomResolver} from "./mocks/MockCustomResolver.sol";
 import {HookMiner} from "./HookMiner.sol";
-
-import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 
 // =============================================================================
 // Base — shared setup for all ConflictResolver tests
@@ -46,7 +45,7 @@ abstract contract ConflictResolverTestBase is Test, Deployers {
             currency0: currency0,
             currency1: currency1,
             hooks: superHook,
-            fee:  LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
             tickSpacing: 60
         });
         poolId = poolKey.toId();
@@ -573,11 +572,16 @@ contract ConflictResolverPureTest is Test {
     function test_additiveBeforeSwap_sumsFees() public view {
         int128[] memory s = _arr(0, 0);
         int128[] memory u = _arr(0, 0);
-        uint24[] memory f = _feeArr(1000, 2000);
+        // Fees include OVERRIDE_FEE_FLAG as set by MockSubHook._beforeSwap.
+        // _additiveBeforeSwap must strip the flag, sum the values, then
+        // re-apply the flag. Result: (1000 + 2000) | OVERRIDE_FEE_FLAG.
+        uint24 flag = LPFeeLibrary.OVERRIDE_FEE_FLAG;
+        uint24[] memory f = _feeArr(1000 | flag, 2000 | flag);
 
         (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
 
-        assertEq(rf, 3000);
+        assertEq(rf & ~flag, 3000, "summed fee value should be 3000");
+        assertTrue(rf & flag != 0, "OVERRIDE_FEE_FLAG must be preserved");
     }
 
     function test_additiveBeforeSwap_zeroFeesProduceZeroOverride() public view {
@@ -593,17 +597,21 @@ contract ConflictResolverPureTest is Test {
     function test_additiveBeforeSwap_exactlyAtMaxFee_doesNotRevert() public view {
         int128[] memory s = _arr(0, 0);
         int128[] memory u = _arr(0, 0);
-        uint24[] memory f = _feeArr(500_000, 500_000); // sums to exactly MAX_LP_FEE = 1_000_000
+        uint24 flag = LPFeeLibrary.OVERRIDE_FEE_FLAG;
+        uint24[] memory f = _feeArr(500_000 | flag, 500_000 | flag);
 
         (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
 
-        assertEq(rf, 1_000_000);
+        assertEq(rf & ~flag, 1_000_000, "summed fee should be MAX_LP_FEE");
+        assertTrue(rf & flag != 0, "OVERRIDE_FEE_FLAG must be preserved");
     }
 
     function test_additiveBeforeSwap_revertsOnFeeOverflow() public {
         int128[] memory s = _arr(0, 0);
         int128[] memory u = _arr(0, 0);
-        uint24[] memory f = _feeArr(500_000, 600_000); // sum = 1_100_000 > MAX_LP_FEE
+        uint24 flag = LPFeeLibrary.OVERRIDE_FEE_FLAG;
+        // Flag is stripped before summing, so 500_000 + 600_000 = 1_100_000 > MAX_LP_FEE.
+        uint24[] memory f = _feeArr(500_000 | flag, 600_000 | flag);
 
         vm.expectRevert(abi.encodeWithSignature("AdditiveFeeOverflow(uint256)", 1_100_000));
         harness.exposed_additiveBeforeSwap(s, u, f);
@@ -657,13 +665,17 @@ contract ConflictResolverPureTest is Test {
         uint16 f1
     ) public view {
         // uint16 inputs: max sum = 2 * 65535 = 131070, well within MAX_LP_FEE.
+        // Include OVERRIDE_FEE_FLAG to match real sub-hook behaviour.
+        uint24 flag = LPFeeLibrary.OVERRIDE_FEE_FLAG;
         int128[] memory s = _arr(0, 0);
         int128[] memory u = _arr(0, 0);
-        uint24[] memory f = _feeArr(uint24(f0), uint24(f1));
+        uint24[] memory f = _feeArr(uint24(f0) | flag, uint24(f1) | flag);
 
         (,, uint24 rf) = harness.exposed_additiveBeforeSwap(s, u, f);
 
-        assertEq(rf, uint24(f0) + uint24(f1));
+        // Strip the flag from the result before comparing the numeric value.
+        assertEq(rf & ~flag, uint24(f0) + uint24(f1), "fee sum should equal f0 + f1");
+        assertTrue(rf & flag != 0, "OVERRIDE_FEE_FLAG must be preserved in result");
     }
 
     // -------------------------------------------------------------------------
@@ -1061,5 +1073,169 @@ contract UpdateStrategyTest is ConflictResolverTestBase {
         superHook.lockPool(poolId);
         vm.expectRevert(abi.encodeWithSignature("PoolIsLocked(bytes32)", PoolId.unwrap(poolId)));
         superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+    }
+}
+
+// =============================================================================
+// Strategy × callback coverage — exercises each strategy across all four
+// delta-returning callbacks to hit every branch in _resolve*.
+// =============================================================================
+
+contract StrategyCallbackCoverageTest is ConflictResolverTestBase {
+
+    // -------------------------------------------------------------------------
+    // LAST_WINS × afterSwap / afterAddLiquidity / afterRemoveLiquidity
+    // -------------------------------------------------------------------------
+
+    function test_lastWins_afterSwap_allSubHooksExecute() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        _addLiquidity();
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterSwapResult(0);
+        mockB.setAfterSwapResult(0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
+
+        swap(poolKey, true, -1000, "");
+
+        assertEq(mockA.afterSwapCount(), 1);
+        assertEq(mockB.afterSwapCount(), 1);
+    }
+
+    function test_lastWins_afterAddLiquidity_allSubHooksExecute() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        mockB.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
+
+        _addLiquidity();
+
+        assertEq(mockA.afterAddLiquidityCount(), 1);
+        assertEq(mockB.afterAddLiquidityCount(), 1);
+    }
+
+    function test_lastWins_afterRemoveLiquidity_allSubHooksExecute() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        mockB.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
+
+        _addLiquidity();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
+
+        assertEq(mockA.afterRemoveLiquidityCount(), 1);
+        assertEq(mockB.afterRemoveLiquidityCount(), 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // ADDITIVE × afterSwap / afterAddLiquidity / afterRemoveLiquidity
+    // -------------------------------------------------------------------------
+
+    function test_additive_afterSwap_allSubHooksExecute() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.ADDITIVE, address(0));
+        _addLiquidity();
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterSwapResult(0);
+        mockB.setAfterSwapResult(0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
+
+        swap(poolKey, true, -1000, "");
+
+        assertEq(mockA.afterSwapCount(), 1);
+        assertEq(mockB.afterSwapCount(), 1);
+    }
+
+    function test_additive_afterAddLiquidity_allSubHooksExecute() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.ADDITIVE, address(0));
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        mockB.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
+
+        _addLiquidity();
+
+        assertEq(mockA.afterAddLiquidityCount(), 1);
+        assertEq(mockB.afterAddLiquidityCount(), 1);
+    }
+
+    function test_additive_afterRemoveLiquidity_allSubHooksExecute() public {
+        superHook.updateStrategy(poolId, ConflictStrategy.ADDITIVE, address(0));
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        MockSubHook mockB = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        mockB.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+        _addSubHook(address(mockB));
+
+        _addLiquidity();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
+
+        assertEq(mockA.afterRemoveLiquidityCount(), 1);
+        assertEq(mockB.afterRemoveLiquidityCount(), 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // CUSTOM × afterSwap / afterAddLiquidity / afterRemoveLiquidity
+    // -------------------------------------------------------------------------
+
+    function test_custom_afterSwap_allSubHooksExecute() public {
+        MockCustomResolver resolver = new MockCustomResolver();
+        resolver.setAfterSwapResult(0, 0);
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(resolver));
+        _addLiquidity();
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterSwapResult(0);
+        _addSubHook(address(mockA));
+
+        swap(poolKey, true, -1000, "");
+
+        assertEq(mockA.afterSwapCount(), 1);
+    }
+
+    function test_custom_afterAddLiquidity_allSubHooksExecute() public {
+        MockCustomResolver resolver = new MockCustomResolver();
+        resolver.setAfterAddLiquidityResult(0, 0);
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(resolver));
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+
+        _addLiquidity();
+
+        assertEq(mockA.afterAddLiquidityCount(), 1);
+    }
+
+    function test_custom_afterRemoveLiquidity_allSubHooksExecute() public {
+        MockCustomResolver resolver = new MockCustomResolver();
+        resolver.setAfterRemoveLiquidityResult(0, 0);
+        superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(resolver));
+
+        MockSubHook mockA = _deployMockSubHook(manager, address(superHook));
+        mockA.setAfterLiquidityResult(0, 0);
+        _addSubHook(address(mockA));
+
+        _addLiquidity();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, REMOVE_LIQUIDITY_PARAMS, "");
+
+        assertEq(mockA.afterRemoveLiquidityCount(), 1);
     }
 }

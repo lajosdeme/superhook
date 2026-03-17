@@ -102,6 +102,7 @@ contract MockSubHook is BaseSubHook {
     function getHookPermissions()
         public
         pure
+        virtual
         override
         returns (Hooks.Permissions memory)
     {
@@ -262,5 +263,133 @@ contract MockSubHook is BaseSubHook {
     ) internal override returns (bytes4) {
         afterDonateCount++;
         return BaseSubHook.afterDonate.selector;
+    }
+}
+
+contract OnlyAfterRemoveLiquiditySubHook is MockSubHook {
+    constructor(
+        IPoolManager _manager,
+        address _superHook
+    ) MockSubHook(_manager, _superHook) {}
+
+    function getHookPermissions()
+        public
+        pure
+        override
+        returns (Hooks.Permissions memory)
+    {
+        return
+            Hooks.Permissions({
+                beforeInitialize: false,
+                afterInitialize: false,
+                beforeAddLiquidity: false,
+                afterAddLiquidity: false,
+                beforeRemoveLiquidity: false,
+                afterRemoveLiquidity: true,
+                beforeSwap: false,
+                afterSwap: false,
+                beforeDonate: false,
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterAddLiquidityReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false
+            });
+    }
+}
+
+contract OnlyAfterSwapSubHook is MockSubHook {
+    constructor(
+        IPoolManager _manager,
+        address _superHook
+    ) MockSubHook(_manager, _superHook) {}
+
+    function getHookPermissions()
+        public
+        pure
+        override
+        returns (Hooks.Permissions memory)
+    {
+        return
+            Hooks.Permissions({
+                beforeInitialize: false,
+                afterInitialize: false,
+                beforeAddLiquidity: false,
+                afterAddLiquidity: false,
+                beforeRemoveLiquidity: false,
+                afterRemoveLiquidity: false,
+                beforeSwap: false,
+                afterSwap: true,
+                beforeDonate: false,
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterAddLiquidityReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false
+            });
+    }
+}
+
+contract OnlyBeforeSwapSubHook is MockSubHook {
+    constructor(
+        IPoolManager _manager,
+        address _superHook
+    ) MockSubHook(_manager, _superHook) {}
+
+    function getHookPermissions()
+        public
+        pure
+        override
+        returns (Hooks.Permissions memory)
+    {
+        return
+            Hooks.Permissions({
+                beforeInitialize: false,
+                afterInitialize: false,
+                beforeAddLiquidity: false,
+                afterAddLiquidity: false,
+                beforeRemoveLiquidity: false,
+                afterRemoveLiquidity: false,
+                beforeSwap: true,
+                afterSwap: false,
+                beforeDonate: false,
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterAddLiquidityReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false
+            });
+    }
+}
+
+contract OnlyBeforeAddLiquiditySubHook is MockSubHook {
+    constructor(
+        IPoolManager _manager,
+        address _superHook
+    ) MockSubHook(_manager, _superHook) {}
+
+    function getHookPermissions()
+        public
+        pure
+        override
+        returns (Hooks.Permissions memory)
+    {
+        return
+            Hooks.Permissions({
+                beforeInitialize: false,
+                afterInitialize: false,
+                beforeAddLiquidity: true,
+                afterAddLiquidity: false,
+                beforeRemoveLiquidity: false,
+                afterRemoveLiquidity: false,
+                beforeSwap: false,
+                afterSwap: false,
+                beforeDonate: false,
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterAddLiquidityReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false
+            });
     }
 }
