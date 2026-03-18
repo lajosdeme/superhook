@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity 0.8.33;
 
 import {BaseHook} from "../../src/external/BaseHook.sol";
 import {ERC1155} from "solmate/src/tokens/ERC1155.sol";

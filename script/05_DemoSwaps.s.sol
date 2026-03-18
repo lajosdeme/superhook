@@ -57,7 +57,7 @@ contract DemoSwaps is Script {
 
     // Unichain Sepolia contract addresses
     address constant POOL_MANAGER      = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
-    address constant UNIVERSAL_ROUTER  = 0xEf740bf23aCaE26f6492B10de645D6B98dC8Eaf3;
+    address constant UNIVERSAL_ROUTER  = 0xf70536B3bcC1bD1a972dc186A2cf84cC6da6Be5D;
     address constant PERMIT2           = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     // Pool configuration — must match 03_CreatePool exactly.

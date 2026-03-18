@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.33;
 
 import {Script, console} from "forge-std/Script.sol";
 
@@ -130,6 +130,7 @@ contract DeploySubHooks is Script {
         internal
         returns (address geomeanOracle)
     {
+        console.log("GEOMEAN SALT: ", salt);
         GeomeanOracle oracle = new GeomeanOracle{salt: bytes32(salt)}(
             IPoolManager(POOL_MANAGER)
         );

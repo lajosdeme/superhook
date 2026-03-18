@@ -18,9 +18,22 @@ contract PointsHookSubHookAddressMiner is Script {
             abi.encode(POOL_MANAGER_ADDRESS, sender)
         );
 
-        // Mine the salt — runs in the script simulation, not onchain.
-        uint256 salt = HookMiner.findSalt(CREATE2_FACTORY, initCode);
+        uint160 mask = HookMiner.permissionsToMask(
+            false, false, false, false, false, false,
+            false, // beforeSwap
+            true,  // afterSwap  ← only bit needed
+            false, false, false, false, false, false
+        );
 
-        console.log("SALT: ", salt);
+        // Mine the salt — runs in the script simulation, not onchain.
+        uint256 salt = HookMiner.findSaltForMask(CREATE2_FACTORY, initCode, mask);
+
+        address predicted = HookMiner.computeCreate2Address(
+            salt, keccak256(initCode), CREATE2_FACTORY
+        );
+
+        console.log("POINTS_SALT:", salt);
+        console.log("Predicted:  ", predicted);
+        console.log("Mask bits:  ", uint160(predicted) & HookMiner.ALL_HOOK_MASK);
     }   
 }
