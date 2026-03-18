@@ -97,7 +97,7 @@ abstract contract SuperHookCallbackTestBase is Test, Deployers {
         bytes memory creationCode = type(MockSubHook).creationCode;
         bytes memory initCode = abi.encodePacked(
             creationCode,
-            abi.encode(address(poolManager), _superHook, mockNonce)
+            abi.encode(_superHook, mockNonce)
         );
         mockNonce++;
 
@@ -557,7 +557,7 @@ contract SuperHookPermissionRoutingTest is SuperHookCallbackTestBase {
 
         deployCodeTo(
             "MockSubHook.sol:OnlyBeforeSwapSubHook",
-            abi.encode(address(manager), address(superHook)),
+            abi.encode(address(superHook)),
             target
         );
 
@@ -583,7 +583,7 @@ contract SuperHookPermissionRoutingTest is SuperHookCallbackTestBase {
         address target = _mockSubHookWithFlags(Hooks.AFTER_SWAP_FLAG);
         deployCodeTo(
             "MockSubHook.sol:OnlyAfterSwapSubHook",
-            abi.encode(address(manager), address(superHook)),
+            abi.encode(address(superHook)),
             target
         );
         MockSubHook afterOnly = MockSubHook(target);
@@ -607,7 +607,7 @@ contract SuperHookPermissionRoutingTest is SuperHookCallbackTestBase {
         address target = _mockSubHookWithFlags(Hooks.BEFORE_ADD_LIQUIDITY_FLAG);
         deployCodeTo(
             "MockSubHook.sol:OnlyBeforeAddLiquiditySubHook",
-            abi.encode(address(manager), address(superHook)),
+            abi.encode(address(superHook)),
             target
         );
 
@@ -643,7 +643,7 @@ contract SuperHookPermissionRoutingTest is SuperHookCallbackTestBase {
 
         deployCodeTo(
             "MockSubHook.sol:OnlyAfterRemoveLiquiditySubHook",
-            abi.encode(address(manager), address(superHook)),
+            abi.encode(address(superHook)),
             target
         );
 
@@ -680,13 +680,13 @@ contract SuperHookPermissionRoutingTest is SuperHookCallbackTestBase {
 
         deployCodeTo(
             "MockSubHook.sol:OnlyBeforeSwapSubHook",
-            abi.encode(address(manager), address(superHook)),
+            abi.encode(address(superHook)),
             beforeHookTarget
         );
 
         deployCodeTo(
             "MockSubHook.sol:OnlyAfterSwapSubHook",
-            abi.encode(address(manager), address(superHook)),
+            abi.encode(address(superHook)),
             afterHookTarget
         );
 

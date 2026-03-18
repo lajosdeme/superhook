@@ -2,17 +2,15 @@
 pragma solidity ^0.8.0;
 
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {ImmutableState} from "v4-periphery/src/base/ImmutableState.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
 /// @title Base Sub-Hook
 /// @notice abstract contract for sub-hook implementations
-abstract contract BaseSubHook is IHooks, ImmutableState {
+abstract contract BaseSubHook is IHooks {
     error HookNotImplemented();
     error NotSuperHook();
 
@@ -23,7 +21,7 @@ abstract contract BaseSubHook is IHooks, ImmutableState {
         _;
     }
 
-    constructor(IPoolManager _manager, address _superHook) ImmutableState(_manager) {
+    constructor(address _superHook) {
         superHook = _superHook;
         validateHookAddress(this);
     }

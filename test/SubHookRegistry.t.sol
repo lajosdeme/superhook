@@ -112,7 +112,7 @@ abstract contract SubHookRegistryTestBase is Test, Deployers {
         bytes memory creationCode = type(MockSubHook).creationCode;
         bytes memory initCode = abi.encodePacked(
             creationCode,
-            abi.encode(address(poolManager), address(superHook), mockNonce)
+            abi.encode(address(superHook), mockNonce)
         );
         mockNonce++;
 

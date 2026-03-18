@@ -13,7 +13,12 @@ import {
     BeforeSwapDelta,
     BeforeSwapDeltaLibrary
 } from "v4-core/types/BeforeSwapDelta.sol";
-import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
+import {
+    ModifyLiquidityParams,
+    SwapParams
+} from "v4-core/types/PoolOperation.sol";
+
+import {BaseSubHook} from "../../src/external/BaseSubHook.sol";
 
 /// @title Oracle
 /// @notice Provides price and liquidity data useful for a wide variety of system designs
@@ -127,6 +132,10 @@ library Oracle {
                 cardinalityUpdated = cardinalityNext;
             } else {
                 cardinalityUpdated = cardinality;
+            }
+
+            if (cardinalityUpdated == 0) {
+                return (index, cardinality);
             }
 
             indexUpdated = (index + 1) % cardinalityUpdated;
@@ -280,6 +289,10 @@ library Oracle {
                 }
             }
 
+            if (cardinality == 0) {
+                return (beforeOrAt, atOrAfter);
+            }
+
             // now, set before to the oldest observation
             beforeOrAt = self[(index + 1) % cardinality];
             if (!beforeOrAt.initialized) beforeOrAt = self[0];
@@ -368,6 +381,12 @@ library Oracle {
                 // we're in the middle
                 uint32 observationTimeDelta = atOrAfter.blockTimestamp -
                     beforeOrAt.blockTimestamp;
+                if (observationTimeDelta == 0) {
+                    return (
+                        beforeOrAt.tickCumulative,
+                        beforeOrAt.secondsPerLiquidityCumulativeX128
+                    );
+                }
                 uint32 targetDelta = target - beforeOrAt.blockTimestamp;
                 return (
                     beforeOrAt.tickCumulative +
@@ -442,7 +461,7 @@ library Oracle {
 /// @notice A hook for a pool that allows a Uniswap pool to act as an oracle. Pools that use this hook must have full range
 ///     tick spacing and liquidity is always permanently locked in these pools. This is the suggested configuration
 ///     for protocols that wish to use a V3 style geomean oracle.
-contract GeomeanOracle is BaseHook {
+contract GeomeanOracle is BaseSubHook {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -470,6 +489,8 @@ contract GeomeanOracle is BaseHook {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) public states;
 
+    IPoolManager immutable poolManager;
+
     /// @notice Returns the observation for the given pool key and observation index
     function getObservation(
         PoolKey calldata key,
@@ -492,7 +513,12 @@ contract GeomeanOracle is BaseHook {
         return uint32(block.timestamp);
     }
 
-    constructor(IPoolManager _manager) BaseHook(_manager) {}
+    constructor(
+        IPoolManager _manager,
+        address _superHook
+    ) BaseSubHook(_superHook) {
+        poolManager = _manager;
+    }
 
     function getHookPermissions()
         public
@@ -523,7 +549,7 @@ contract GeomeanOracle is BaseHook {
         address,
         PoolKey calldata key,
         uint160
-    ) internal view override onlyPoolManager returns (bytes4) {
+    ) internal view override returns (bytes4) {
         // This is to limit the fragmentation of pools using this oracle hook. In other words,
         // there may only be one pool per pair of tokens that use this hook. The tick spacing is set to the maximum
         // because we only allow max range liquidity in this pool.
@@ -537,7 +563,7 @@ contract GeomeanOracle is BaseHook {
         PoolKey calldata key,
         uint160,
         int24
-    ) internal override onlyPoolManager returns (bytes4) {
+    ) internal override returns (bytes4) {
         PoolId id = key.toId();
         (states[id].cardinality, states[id].cardinalityNext) = observations[id]
             .initialize(_blockTimestamp());
@@ -566,7 +592,7 @@ contract GeomeanOracle is BaseHook {
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         bytes calldata
-    ) internal override onlyPoolManager returns (bytes4) {
+    ) internal override returns (bytes4) {
         int24 maxTickSpacing = TickMath.MAX_TICK_SPACING;
         if (
             params.tickLower != TickMath.minUsableTick(maxTickSpacing) ||
@@ -581,7 +607,7 @@ contract GeomeanOracle is BaseHook {
         PoolKey calldata,
         ModifyLiquidityParams calldata,
         bytes calldata
-    ) internal view override onlyPoolManager returns (bytes4) {
+    ) internal view override returns (bytes4) {
         revert OraclePoolMustLockLiquidity();
     }
 
@@ -590,12 +616,7 @@ contract GeomeanOracle is BaseHook {
         PoolKey calldata key,
         SwapParams calldata,
         bytes calldata
-    )
-        internal
-        override
-        onlyPoolManager
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
+    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
         _updatePool(key);
         return (
             BaseHook.beforeSwap.selector,

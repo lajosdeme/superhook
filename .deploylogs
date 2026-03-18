@@ -1,17 +1,17 @@
 == Return ==
-tokenA: address 0x4781A670E8524f229CF0f17783D7A1adEA736925
-tokenB: address 0x0c34ff558b55B70a61c3951FD9197f05271A827e
+tokenA: address 0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
+tokenB: address 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
 
 == Logs ==
   Deployer:        0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
   Initial supply:  1000000 tokens each
 
-  DEMO_A deployed to:   0x4781A670E8524f229CF0f17783D7A1adEA736925
-  DEMO_B deployed to:   0x0c34ff558b55B70a61c3951FD9197f05271A827e
+  DEMO_A deployed to:   0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
+  DEMO_B deployed to:   0x42f2d841c382eea08740AD9537Fe8958736A65Ce
 
   Sorted for PoolKey:
-    currency0:          0x0c34ff558b55B70a61c3951FD9197f05271A827e
-    currency1:          0x4781A670E8524f229CF0f17783D7A1adEA736925
+    currency0:          0x42f2d841c382eea08740AD9537Fe8958736A65Ce
+    currency1:          0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
 
   Deployer DEMO_A balance:  1000000
   Deployer DEMO_B balance:  1000000
@@ -30,50 +30,49 @@ tokenB: address 0x0c34ff558b55B70a61c3951FD9197f05271A827e
 
 == Logs ==
   Deployer:           0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
-  token0 (currency0): 0x0c34ff558b55B70a61c3951FD9197f05271A827e
-  token1 (currency1): 0x4781A670E8524f229CF0f17783D7A1adEA736925
+  token0 (currency0): 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
+  token1 (currency1): 0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
   SuperHook:          0xDF634c4D50566852951b18bc3fa96f05b907fFff
   PoolId:
-  0x354bf0c82a04a4b045b7dec1b7ebf82999e937fe1c3283a1214b70e322b35dd7
+  0x87c7608d967ac897b65e627ab2aa6ac5e28458c63724bf27d45454961cfb19fd
 
   Permit2 approved for both tokens
   PositionManager approved via Permit2 for both tokens
   Pool initialised successfully.
   sqrtPriceX96: 79228162514264337593543950336
   Pool admin:   0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
-  PositionManager nextTokenId (approx): 7232
+  PositionManager nextTokenId (approx): 7240
 
   Next step: run 04_DeploySubHooks.s.sol
-    export POOL_KEY_CURRENCY0= 0x0c34ff558b55B70a61c3951FD9197f05271A827e
-    export POOL_KEY_CURRENCY1= 0x4781A670E8524f229CF0f17783D7A1adEA736925
+    export POOL_KEY_CURRENCY0= 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
+    export POOL_KEY_CURRENCY1= 0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
 
 ## Setting up 1 EVM.
 
 ==========================
 
 == Return ==
-geomeanOracle: address 0x6b2f3Fc12311e8040CB15789F338664234983a80
-pointsHook: address 0xa1295006b52F78708E3aDE20eF0B00467D254040
+geomeanOracle: address 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80                                  pointsHook: address 0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
 
 == Logs ==
   Deployer:   0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
   SuperHook:  0xDF634c4D50566852951b18bc3fa96f05b907fFff
   PoolId:
-  0x354bf0c82a04a4b045b7dec1b7ebf82999e937fe1c3283a1214b70e322b35dd7
+  0x87c7608d967ac897b65e627ab2aa6ac5e28458c63724bf27d45454961cfb19fd
 
-  GEOMEAN SALT:  3024
+  GEOMEAN SALT:  19191
   GeomeanOracle permission bits verified OK
   PointsHook permission bits verified OK
-  GeomeanOracle deployed to: 0x6b2f3Fc12311e8040CB15789F338664234983a80
-  PointsHook    deployed to: 0xa1295006b52F78708E3aDE20eF0B00467D254040
+  GeomeanOracle deployed to: 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80
+  PointsHook    deployed to: 0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
 
   Sub-hooks registered with SuperHook:
-    [0] GeomeanOracle: 0x6b2f3Fc12311e8040CB15789F338664234983a80
-    [1] PointsHook:   0xa1295006b52F78708E3aDE20eF0B00467D254040
+    [0] GeomeanOracle: 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80
+    [1] PointsHook:   0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
 
   Next step: run 05_DemoSwaps.s.sol
-    export GEOMEAN_ORACLE= 0x6b2f3Fc12311e8040CB15789F338664234983a80
-    export POINTS_HOOK= 0xa1295006b52F78708E3aDE20eF0B00467D254040
+    export GEOMEAN_ORACLE= 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80
+    export POINTS_HOOK= 0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
 
 ## Setting up 1 EVM.
 

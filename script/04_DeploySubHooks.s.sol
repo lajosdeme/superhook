@@ -49,6 +49,8 @@ contract DeploySubHooks is Script {
     // Unichain Sepolia V4 PoolManager
     address constant POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
 
+    address constant SUPER_HOOK = 0xDF634c4D50566852951b18bc3fa96f05b907fFff;
+
     // Pool configuration — must match 03_CreatePool exactly.
     uint24  constant FEE          = LPFeeLibrary.DYNAMIC_FEE_FLAG;
     int24   constant TICK_SPACING = 60;
@@ -132,7 +134,7 @@ contract DeploySubHooks is Script {
     {
         console.log("GEOMEAN SALT: ", salt);
         GeomeanOracle oracle = new GeomeanOracle{salt: bytes32(salt)}(
-            IPoolManager(POOL_MANAGER)
+            IPoolManager(POOL_MANAGER), SUPER_HOOK
         );
         geomeanOracle = address(oracle);
         _verifyPermissions(geomeanOracle, "GeomeanOracle", oracle.getHookPermissions());
@@ -143,8 +145,8 @@ contract DeploySubHooks is Script {
         returns (address pointsHook)
     {
         PointsHook points = new PointsHook{salt: bytes32(salt)}(
-            IPoolManager(POOL_MANAGER),
-            owner
+            owner,
+            SUPER_HOOK
         );
         pointsHook = address(points);
         _verifyPermissions(pointsHook, "PointsHook", points.getHookPermissions());
@@ -160,6 +162,9 @@ contract DeploySubHooks is Script {
         address pointsHook
     ) internal {
         SuperHook superHook = SuperHook(payable(cfg.superHookAddr));
+
+        superHook.removeSubHook(cfg.poolId, 0x6f803E38a5021D8bDea2743686Cb1bf6cb653a80);
+        superHook.removeSubHook(cfg.poolId, 0xD111F6fA33D9561b6b0A8C7dE443f4EEBD44C040);
 
         // Index 0 — GeomeanOracle: observes raw swap state first.
         // Index 1 — PointsHook:   awards points after swap settles.

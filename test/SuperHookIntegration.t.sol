@@ -74,7 +74,7 @@ abstract contract SuperHookIntegrationBase is Test, Deployers {
         bytes memory creationCode = type(MockSubHook).creationCode;
         bytes memory initCode = abi.encodePacked(
             creationCode,
-            abi.encode(address(manager), address(superHook), mockNonce)
+            abi.encode(address(superHook), mockNonce)
         );
         mockNonce++;
         uint256 salt = HookMiner.findSalt(address(this), initCode);

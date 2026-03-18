@@ -84,7 +84,7 @@ abstract contract ConflictResolverTestBase is Test, Deployers {
         bytes memory creationCode = type(MockSubHook).creationCode;
         bytes memory initCode = abi.encodePacked(
             creationCode,
-            abi.encode(address(poolManager), _superHook, mockNonce)
+            abi.encode(_superHook, mockNonce)
         );
         mockNonce++;
 

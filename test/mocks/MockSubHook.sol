@@ -50,9 +50,8 @@ contract MockSubHook is BaseSubHook {
     uint256 public afterDonateCount;
 
     constructor(
-        IPoolManager _manager,
         address _superHook
-    ) BaseSubHook(_manager, _superHook) {}
+    ) BaseSubHook(_superHook) {}
 
     function setPermissions(
         bool _beforeInitialize,
@@ -268,9 +267,8 @@ contract MockSubHook is BaseSubHook {
 
 contract OnlyAfterRemoveLiquiditySubHook is MockSubHook {
     constructor(
-        IPoolManager _manager,
         address _superHook
-    ) MockSubHook(_manager, _superHook) {}
+    ) MockSubHook(_superHook) {}
 
     function getHookPermissions()
         public
@@ -300,9 +298,8 @@ contract OnlyAfterRemoveLiquiditySubHook is MockSubHook {
 
 contract OnlyAfterSwapSubHook is MockSubHook {
     constructor(
-        IPoolManager _manager,
         address _superHook
-    ) MockSubHook(_manager, _superHook) {}
+    ) MockSubHook(_superHook) {}
 
     function getHookPermissions()
         public
@@ -332,9 +329,8 @@ contract OnlyAfterSwapSubHook is MockSubHook {
 
 contract OnlyBeforeSwapSubHook is MockSubHook {
     constructor(
-        IPoolManager _manager,
         address _superHook
-    ) MockSubHook(_manager, _superHook) {}
+    ) MockSubHook(_superHook) {}
 
     function getHookPermissions()
         public
@@ -364,9 +360,8 @@ contract OnlyBeforeSwapSubHook is MockSubHook {
 
 contract OnlyBeforeAddLiquiditySubHook is MockSubHook {
     constructor(
-        IPoolManager _manager,
         address _superHook
-    ) MockSubHook(_manager, _superHook) {}
+    ) MockSubHook(_superHook) {}
 
     function getHookPermissions()
         public
