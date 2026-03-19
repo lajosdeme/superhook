@@ -182,7 +182,7 @@ script/
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/superhook
+git clone https://github.com/lajosdeme/superhook
 cd superhook
 forge install
 ```
