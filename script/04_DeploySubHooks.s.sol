@@ -49,7 +49,7 @@ contract DeploySubHooks is Script {
     // Unichain Sepolia V4 PoolManager
     address constant POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
 
-    address constant SUPER_HOOK = 0xDF634c4D50566852951b18bc3fa96f05b907fFff;
+    address SUPER_HOOK;
 
     // Pool configuration — must match 03_CreatePool exactly.
     uint24  constant FEE          = LPFeeLibrary.DYNAMIC_FEE_FLAG;
@@ -83,7 +83,7 @@ contract DeploySubHooks is Script {
         geomeanOracle = _deployGeomeanOracle(cfg.geomeanSalt);
         pointsHook    = _deployPointsHook(cfg.pointsSalt, cfg.deployer);
 
-        _registerSubHooks(cfg, geomeanOracle, pointsHook);
+        //_registerSubHooks(cfg, geomeanOracle, pointsHook);
 
         vm.stopBroadcast();
 
@@ -100,6 +100,8 @@ contract DeploySubHooks is Script {
         cfg.superHookAddr   = vm.envAddress("SUPER_HOOK");
         cfg.geomeanSalt     = vm.envUint("GEOMEAN_SALT");
         cfg.pointsSalt      = vm.envUint("POINTS_SALT");
+
+        SUPER_HOOK = cfg.superHookAddr;
 
         address tokenA = vm.envAddress("DEMO_A");
         address tokenB = vm.envAddress("DEMO_B");
@@ -132,7 +134,7 @@ contract DeploySubHooks is Script {
         internal
         returns (address geomeanOracle)
     {
-        console.log("GEOMEAN SALT: ", salt);
+        console.log("SUPER HOOK: ", SUPER_HOOK);
         GeomeanOracle oracle = new GeomeanOracle{salt: bytes32(salt)}(
             IPoolManager(POOL_MANAGER), SUPER_HOOK
         );
@@ -144,6 +146,7 @@ contract DeploySubHooks is Script {
         internal
         returns (address pointsHook)
     {
+        console.log("SUPER HOOK: ", SUPER_HOOK);
         PointsHook points = new PointsHook{salt: bytes32(salt)}(
             owner,
             SUPER_HOOK
@@ -178,19 +181,19 @@ contract DeploySubHooks is Script {
         address geomeanOracle,
         address pointsHook
     ) internal view {
-        SuperHook superHook = SuperHook(payable(cfg.superHookAddr));
+/*         SuperHook superHook = SuperHook(payable(cfg.superHookAddr));
         address[] memory subHooks = superHook.getSubHooks(cfg.poolId);
 
         require(subHooks.length == 2,         "DeploySubHooks: expected 2 sub-hooks");
         require(subHooks[0] == geomeanOracle, "DeploySubHooks: oracle not at index 0");
-        require(subHooks[1] == pointsHook,    "DeploySubHooks: points not at index 1");
+        require(subHooks[1] == pointsHook,    "DeploySubHooks: points not at index 1"); */
 
         console.log("GeomeanOracle deployed to:", geomeanOracle);
         console.log("PointsHook    deployed to:", pointsHook);
         console.log("");
         console.log("Sub-hooks registered with SuperHook:");
-        console.log("  [0] GeomeanOracle:", subHooks[0]);
-        console.log("  [1] PointsHook:  ", subHooks[1]);
+        //console.log("  [0] GeomeanOracle:", subHooks[0]);
+        //console.log("  [1] PointsHook:  ", subHooks[1]);
         console.log("");
         console.log("Next step: run 05_DemoSwaps.s.sol");
         console.log("  export GEOMEAN_ORACLE=", geomeanOracle);

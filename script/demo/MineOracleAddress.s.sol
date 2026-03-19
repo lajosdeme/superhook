@@ -10,9 +10,8 @@ import {GeomeanOracle} from "./GeomeanOracle.sol";
 contract GeomeanOracleSubHookAddressMiner is Script {
     address constant POOL_MANAGER_ADDRESS = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
 
-    address constant SUPER_HOOK = 0xDF634c4D50566852951b18bc3fa96f05b907fFff;
-
     function run() external {
+        address SUPER_HOOK = vm.envAddress("SUPER_HOOK");
         bytes memory initCode = abi.encodePacked(
             type(GeomeanOracle).creationCode,
             abi.encode(POOL_MANAGER_ADDRESS, SUPER_HOOK)

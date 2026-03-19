@@ -20,6 +20,8 @@ import {Actions} from "v4-periphery/src/libraries/Actions.sol";
 import {SuperHook} from "../src/SuperHook.sol";
 import {ConflictStrategy} from "../src/types/PoolHookConfig.sol";
 
+import {TickMath} from "v4-core/libraries/TickMath.sol";
+
 // =============================================================================
 // 03_CreatePool
 // =============================================================================
@@ -58,21 +60,23 @@ contract CreatePool is Script {
     address constant PERMIT2          = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     // Pool configuration
-    uint24  constant FEE          = LPFeeLibrary.DYNAMIC_FEE_FLAG;
-    int24   constant TICK_SPACING = 60;
+    uint24  constant FEE          = 0;
+    int24   constant TICK_SPACING = type(int16).max;
 
     // Starting price 1:1 — sqrtPriceX96 = sqrt(1) * 2^96
     uint160 constant SQRT_PRICE_1_1 = 79228162514264337593543950336;
 
     // Full-range tick bounds for tickSpacing = 60
-    int24 constant TICK_LOWER = -887220;
-    int24 constant TICK_UPPER =  887220;
+    int24 TICK_LOWER;
+    int24 TICK_UPPER;
 
     // 100_000 tokens of each to seed the pool
     uint256 constant LIQUIDITY_AMOUNT = 100_000 ether;
 
     uint128 constant AMOUNT_MAX      = type(uint128).max;
     uint256 constant DEADLINE_OFFSET = 600;
+
+    address[] pendingSubHooks;
 
     // -------------------------------------------------------------------------
     // Config struct — keeps run() and helpers under the 16-slot stack limit
@@ -93,6 +97,10 @@ contract CreatePool is Script {
     // -------------------------------------------------------------------------
 
     function run() external returns (PoolKey memory poolKey, PoolId poolId) {
+        int24 maxTickSpacing = TickMath.MAX_TICK_SPACING;
+        TICK_LOWER = TickMath.minUsableTick(maxTickSpacing);
+        TICK_UPPER = TickMath.maxUsableTick(maxTickSpacing);
+
         Config memory cfg = _loadConfig();
 
         poolKey = cfg.poolKey;
@@ -102,7 +110,8 @@ contract CreatePool is Script {
 
         _approvePermit2(cfg);
         _approvePositionManager(cfg);
-        _prepareAndInitialize(cfg);
+        _prepareAndInitializeWithSubHooks(cfg);
+        //_prepareAndInitialize(cfg);
 
         vm.stopBroadcast();
 
@@ -184,6 +193,29 @@ contract CreatePool is Script {
             cfg.poolKey,
             ConflictStrategy.FIRST_WINS,
             address(0)
+        );
+
+        bytes[] memory multicallParams = new bytes[](2);
+        multicallParams[0] = _encodeInitialize(cfg);
+        multicallParams[1] = _encodeMintLiquidity(cfg);
+
+        IPositionManager(POSITION_MANAGER).multicall(multicallParams);
+    }
+
+    function _prepareAndInitializeWithSubHooks(Config memory cfg) private {
+        address pointsHookAddr    = vm.envAddress("POINTS_HOOK");
+        address geomeanOracleAddr = vm.envAddress("GEOMEAN_ORACLE");
+        pendingSubHooks.push(geomeanOracleAddr);
+        pendingSubHooks.push(pointsHookAddr);
+
+        // Register deployer as admin before PositionManager calls initialize.
+        // preparePool stores msg.sender (the deployer EOA) so that
+        // beforeInitialize can promote it regardless of who triggers it.
+        SuperHook(payable(cfg.superHook)).preparePool(
+            cfg.poolKey,
+            ConflictStrategy.FIRST_WINS,
+            address(0),
+            pendingSubHooks
         );
 
         bytes[] memory multicallParams = new bytes[](2);

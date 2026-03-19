@@ -1,17 +1,17 @@
 == Return ==
-tokenA: address 0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
-tokenB: address 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
+tokenA: address 0x998AF61cD0525b30c643308642Df3F19634ca28C
+tokenB: address 0x944D768aD5Cf410260F8438905d6921B3FA45672
 
 == Logs ==
   Deployer:        0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
   Initial supply:  1000000 tokens each
 
-  DEMO_A deployed to:   0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
-  DEMO_B deployed to:   0x42f2d841c382eea08740AD9537Fe8958736A65Ce
+  DEMO_A deployed to:   0x998AF61cD0525b30c643308642Df3F19634ca28C
+  DEMO_B deployed to:   0x944D768aD5Cf410260F8438905d6921B3FA45672
 
   Sorted for PoolKey:
-    currency0:          0x42f2d841c382eea08740AD9537Fe8958736A65Ce
-    currency1:          0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
+    currency0:          0x944D768aD5Cf410260F8438905d6921B3FA45672
+    currency1:          0x998AF61cD0525b30c643308642Df3F19634ca28C
 
   Deployer DEMO_A balance:  1000000
   Deployer DEMO_B balance:  1000000
@@ -22,58 +22,23 @@ tokenB: address 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
 
 == Logs ==
   starting SuperHook deployment...
-  super hook deployed to:  0xDF634c4D50566852951b18bc3fa96f05b907fFff
+  super hook deployed to:  0x5dF0562d0f9FA211c3A10A7032026B4186a4bFFF
 
 ## Setting up 1 EVM.
 
 ==========================
 
-== Logs ==
-  Deployer:           0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
-  token0 (currency0): 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
-  token1 (currency1): 0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
-  SuperHook:          0xDF634c4D50566852951b18bc3fa96f05b907fFff
-  PoolId:
-  0x87c7608d967ac897b65e627ab2aa6ac5e28458c63724bf27d45454961cfb19fd
+                                                                                                     == Return ==
+geomeanOracle: address 0xc59BBce255FC71b0a840829A3c4089D0DF4CbA80
+pointsHook: address 0x4197c1cEA5f404BC586387768151b4cC2F8D8040                                                                                                                                            == Logs ==                                                                                             Deployer:   0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4                                               SuperHook:  0x5dF0562d0f9FA211c3A10A7032026B4186a4bFFF                                               PoolId:                                                                                              0xb464164724edf2a11f60e7bf77162779a1355b745982df2f3561022e61d6ddfd                                                                                                                                        SUPER HOOK:  0x5dF0562d0f9FA211c3A10A7032026B4186a4bFFF                                              GeomeanOracle permission bits verified OK                                                            SUPER HOOK:  0x5dF0562d0f9FA211c3A10A7032026B4186a4bFFF                                              PointsHook permission bits verified OK                                                               GeomeanOracle deployed to: 0xc59BBce255FC71b0a840829A3c4089D0DF4CbA80                                PointsHook    deployed to: 0x4197c1cEA5f404BC586387768151b4cC2F8D8040                                                                                                                                     Sub-hooks registered with SuperHook:                                                                                                                                                                      Next step: run 05_DemoSwaps.s.sol                                                                      export GEOMEAN_ORACLE= 0xc59BBce255FC71b0a840829A3c4089D0DF4CbA80                                    export POINTS_HOOK= 0x4197c1cEA5f404BC586387768151b4cC2F8D8040                                                                                                                                        ## Setting up 1 EVM.
+                                                                                                     ==========================
 
-  Permit2 approved for both tokens
-  PositionManager approved via Permit2 for both tokens
-  Pool initialised successfully.
-  sqrtPriceX96: 79228162514264337593543950336
-  Pool admin:   0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
-  PositionManager nextTokenId (approx): 7240
 
-  Next step: run 04_DeploySubHooks.s.sol
-    export POOL_KEY_CURRENCY0= 0x42f2d841c382eea08740AD9537Fe8958736A65Ce
-    export POOL_KEY_CURRENCY1= 0xFb32250637B3bF054Ec7b19264080b8Ce5Cf5f30
+                                                                            
 
-## Setting up 1 EVM.
 
-==========================
-
-== Return ==
-geomeanOracle: address 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80                                  pointsHook: address 0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
-
-== Logs ==
-  Deployer:   0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
-  SuperHook:  0xDF634c4D50566852951b18bc3fa96f05b907fFff
-  PoolId:
-  0x87c7608d967ac897b65e627ab2aa6ac5e28458c63724bf27d45454961cfb19fd
-
-  GEOMEAN SALT:  19191
-  GeomeanOracle permission bits verified OK
-  PointsHook permission bits verified OK
-  GeomeanOracle deployed to: 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80
-  PointsHook    deployed to: 0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
-
-  Sub-hooks registered with SuperHook:
-    [0] GeomeanOracle: 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80
-    [1] PointsHook:   0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
-
-  Next step: run 05_DemoSwaps.s.sol
-    export GEOMEAN_ORACLE= 0x70915B9cE52c2bb1adA32a9B3674142F84fA7a80
-    export POINTS_HOOK= 0xc8Be33BaC766557C38Ee82c2d84aC993eF678040
-
-## Setting up 1 EVM.
-
+== Return ==                                                                                         poolKey: struct PoolKey PoolKey({ currency0: 0x944D768aD5Cf410260F8438905d6921B3FA45672, currency1: 0x998AF61cD0525b30c643308642Df3F19634ca28C, fee: 0, tickSpacing: 32767 [3.276e4], hooks: 0x5dF0562d0f9FA211c3A10A7032026B4186a4bFFF })                                                                     poolId: PoolId 0xc622d94e3d7a976e145d4491eddc5e869cb4843f75ddc733dd030f3c3458b397                                                                                                                         == Logs ==                                                                                             Deployer:           0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4                                       token0 (currency0): 0x944D768aD5Cf410260F8438905d6921B3FA45672                                       token1 (currency1): 0x998AF61cD0525b30c643308642Df3F19634ca28C                                       SuperHook:          0x5dF0562d0f9FA211c3A10A7032026B4186a4bFFF                                       PoolId:                                                                                              0xc622d94e3d7a976e145d4491eddc5e869cb4843f75ddc733dd030f3c3458b397                                                                                                                                        Permit2 approved for both tokens
+  PositionManager approved via Permit2 for both tokens                                                 Pool initialised successfully.                                                                       sqrtPriceX96: 79228162514264337593543950336                                                          Pool admin:   0xeeb3e0999D01f0d1Ed465513E414725a357F6ae4
+  PositionManager nextTokenId (approx): 7256                                                                                                                                                                Next step: run 04_DeploySubHooks.s.sol                                                                 export POOL_KEY_CURRENCY0= 0x944D768aD5Cf410260F8438905d6921B3FA45672
+    export POOL_KEY_CURRENCY1= 0x998AF61cD0525b30c643308642Df3F19634ca28C                                                                                                                                 ## Setting up 1 EVM.
 ==========================

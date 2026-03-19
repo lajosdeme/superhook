@@ -56,8 +56,8 @@ contract DemoSwaps is Script {
     using CurrencyLibrary for Currency;
 
     // Pool configuration — must match 03_CreatePool exactly.
-    uint24 constant FEE          = LPFeeLibrary.DYNAMIC_FEE_FLAG;
-    int24  constant TICK_SPACING = 60;
+    uint24 constant FEE          = 0;
+    int24  constant TICK_SPACING = type(int16).max;
 
     // Swap amounts (exact-input, negative = exactInput in V4 swap convention)
     int256 constant SWAP_1_AMOUNT = -1_000 ether;
@@ -117,7 +117,7 @@ contract DemoSwaps is Script {
     // Config loading
     // -------------------------------------------------------------------------
 
-    function _loadConfig() private returns (Config memory cfg) {
+    function _loadConfig() private view returns (Config memory cfg) {
         cfg.privKey  = vm.envUint("KEY");
         cfg.swapper  = vm.addr(cfg.privKey);
         cfg.swapRouter        = vm.envAddress("SWAP_ROUTER");
