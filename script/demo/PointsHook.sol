@@ -64,7 +64,7 @@ contract PointsHook is BaseSubHook, ERC1155, Ownable {
     function _afterSwap(
         address,
         PoolKey calldata key,
-        SwapParams calldata swapParams,
+        SwapParams calldata /* swapParams */,
         BalanceDelta delta,
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {

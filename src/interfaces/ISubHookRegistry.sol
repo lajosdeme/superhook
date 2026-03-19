@@ -9,6 +9,8 @@ interface ISubHookRegistry {
     // Events
     // -------------------------------------------------------------------------
 
+    event PoolPrepared(PoolId indexed poolId);
+    
     event PoolRegistered(
         PoolId indexed poolId, address indexed admin, ConflictStrategy strategy, address customResolver
     );

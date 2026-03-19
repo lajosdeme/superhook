@@ -10,7 +10,10 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
 import {SuperHook} from "../src/SuperHook.sol";
-import {PoolHookConfig, ConflictStrategy} from "../src/types/PoolHookConfig.sol";
+import {
+    PoolHookConfig,
+    ConflictStrategy
+} from "../src/types/PoolHookConfig.sol";
 import {MockSubHook} from "./mocks/MockSubHook.sol";
 import {HookMiner} from "./HookMiner.sol";
 
@@ -18,6 +21,7 @@ import {HookMiner} from "./HookMiner.sol";
 // Re-declare events and errors so expectEmit / expectRevert work without
 // importing the internal registry contract directly.
 // ---------------------------------------------------------------------------
+event PoolPrepared(PoolId indexed poolId);
 
 event PoolRegistered(
     PoolId indexed poolId,
@@ -25,7 +29,11 @@ event PoolRegistered(
     ConflictStrategy strategy,
     address customResolver
 );
-event SubHookAdded(PoolId indexed poolId, address indexed subHook, uint256 insertIndex);
+event SubHookAdded(
+    PoolId indexed poolId,
+    address indexed subHook,
+    uint256 insertIndex
+);
 event SubHookRemoved(PoolId indexed poolId, address indexed subHook);
 event SubHooksReordered(PoolId indexed poolId, address[] newOrder);
 event PoolLocked(PoolId indexed poolId);
@@ -89,16 +97,27 @@ abstract contract SubHookRegistryTestBase is Test, Deployers {
     // Deployment helpers
     // -------------------------------------------------------------------------
 
-    function _deploySuperHook(IPoolManager poolManager) internal returns (SuperHook) {
+    function _deploySuperHook(
+        IPoolManager poolManager
+    ) internal returns (SuperHook) {
         bytes memory creationCode = type(SuperHook).creationCode;
-        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(address(poolManager)));
+        bytes memory initCode = abi.encodePacked(
+            creationCode,
+            abi.encode(address(poolManager))
+        );
 
         uint256 salt = HookMiner.findSalt(address(this), initCode);
-        address hookAddr = HookMiner.computeCreate2Address(salt, keccak256(initCode), address(this));
+        address hookAddr = HookMiner.computeCreate2Address(
+            salt,
+            keccak256(initCode),
+            address(this)
+        );
 
         assembly {
             let ret := create2(0, add(initCode, 0x20), mload(initCode), salt)
-            if iszero(ret) { revert(0, 0) }
+            if iszero(ret) {
+                revert(0, 0)
+            }
         }
 
         return SuperHook(payable(hookAddr));
@@ -108,7 +127,9 @@ abstract contract SubHookRegistryTestBase is Test, Deployers {
     ///      Passes (poolManager, superHook, nonce) matching MockSubHook's constructor.
     ///      The nonce ensures unique initcode per deployment so HookMiner finds
     ///      a distinct address each time.
-    function _deployMockSubHook(IPoolManager poolManager) internal returns (MockSubHook) {
+    function _deployMockSubHook(
+        IPoolManager poolManager
+    ) internal returns (MockSubHook) {
         bytes memory creationCode = type(MockSubHook).creationCode;
         bytes memory initCode = abi.encodePacked(
             creationCode,
@@ -117,11 +138,17 @@ abstract contract SubHookRegistryTestBase is Test, Deployers {
         mockNonce++;
 
         uint256 salt = HookMiner.findSalt(address(this), initCode);
-        address hookAddr = HookMiner.computeCreate2Address(salt, keccak256(initCode), address(this));
+        address hookAddr = HookMiner.computeCreate2Address(
+            salt,
+            keccak256(initCode),
+            address(this)
+        );
 
         assembly {
             let ret := create2(0, add(initCode, 0x20), mload(initCode), salt)
-            if iszero(ret) { revert(0, 0) }
+            if iszero(ret) {
+                revert(0, 0)
+            }
         }
 
         return MockSubHook(payable(hookAddr));
@@ -132,7 +159,58 @@ abstract contract SubHookRegistryTestBase is Test, Deployers {
     // -------------------------------------------------------------------------
 
     function _addSubHook(address subHook) internal {
-        superHook.addSubHook(poolId, subHook, superHook.getSubHooks(poolId).length);
+        superHook.addSubHook(
+            poolId,
+            subHook,
+            superHook.getSubHooks(poolId).length
+        );
+    }
+}
+
+contract SubHookRegistryPrepareSubHooksTest is SubHookRegistryTestBase {
+    MockSubHook public hookA;
+    MockSubHook public hookB;
+
+    address[] pendingSubHooks;
+
+    function setUp() public override {
+        deployFreshManagerAndRouters();
+        (currency0, currency1) = deployMintAndApprove2Currencies();
+
+        superHook = _deploySuperHook(manager);
+        poolKey = PoolKey({
+            currency0: currency0,
+            currency1: currency1,
+            hooks: superHook,
+            fee: 3000,
+            tickSpacing: 60
+        });
+        poolId = poolKey.toId();
+
+        hookA = _deployMockSubHook(manager);
+        hookB = _deployMockSubHook(manager);
+
+        pendingSubHooks.push(address(hookA));
+        pendingSubHooks.push(address(hookB));
+
+        //manager.initialize(poolKey, SQRT_PRICE_1_1);
+    }
+
+    function test_subHooksPrepared() external {
+        superHook.preparePool(
+            poolKey,
+            ConflictStrategy.FIRST_WINS,
+            address(0),
+            pendingSubHooks
+        );
+
+        address[] memory _subHooksBefore = superHook.getSubHooks(poolId);
+        assertEq(_subHooksBefore.length, 0);
+
+        manager.initialize(poolKey, SQRT_PRICE_1_1);
+
+        address[] memory _subHooks = superHook.getSubHooks(poolId);
+        assertEq(_subHooks.length, 2);
     }
 }
 
@@ -148,7 +226,10 @@ contract SubHookRegistryInitializationTest is SubHookRegistryTestBase {
 
     function test_initializesPoolWithDefaultStrategyFirstWins() public view {
         PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint256(config.strategy), uint256(ConflictStrategy.FIRST_WINS));
+        assertEq(
+            uint256(config.strategy),
+            uint256(ConflictStrategy.FIRST_WINS)
+        );
     }
 
     function test_initializesPoolWithEmptySubHookList() public view {
@@ -199,8 +280,16 @@ contract SubHookRegistryAddSubHookTest is SubHookRegistryTestBase {
         superHook.addSubHook(poolId, address(mockSubHook), 0); // insert at front
 
         address[] memory subHooks = superHook.getSubHooks(poolId);
-        assertEq(subHooks[0], address(mockSubHook), "inserted hook should be first");
-        assertEq(subHooks[1], address(hookB), "original hook should shift right");
+        assertEq(
+            subHooks[0],
+            address(mockSubHook),
+            "inserted hook should be first"
+        );
+        assertEq(
+            subHooks[1],
+            address(hookB),
+            "original hook should shift right"
+        );
     }
 
     function test_addSubHook_insertsAtMiddle() public {
@@ -237,7 +326,9 @@ contract SubHookRegistryAddSubHookTest is SubHookRegistryTestBase {
 
     function test_addSubHook_revertsIfNotAdmin() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, alice)
+        );
         superHook.addSubHook(poolId, address(mockSubHook), 0);
     }
 
@@ -255,7 +346,9 @@ contract SubHookRegistryAddSubHookTest is SubHookRegistryTestBase {
             superHook.addSubHook(poolId, address(hooks[i]), i);
         }
         MockSubHook overflow = _deployMockSubHook(manager);
-        vm.expectRevert(abi.encodeWithSelector(MaxSubHooksReached.selector, poolId));
+        vm.expectRevert(
+            abi.encodeWithSelector(MaxSubHooksReached.selector, poolId)
+        );
         superHook.addSubHook(poolId, address(overflow), 0);
     }
 
@@ -276,7 +369,11 @@ contract SubHookRegistryAddSubHookTest is SubHookRegistryTestBase {
     function test_addSubHook_revertsIfDuplicate() public {
         superHook.addSubHook(poolId, address(mockSubHook), 0);
         vm.expectRevert(
-            abi.encodeWithSelector(SubHookAlreadyRegistered.selector, poolId, address(mockSubHook))
+            abi.encodeWithSelector(
+                SubHookAlreadyRegistered.selector,
+                poolId,
+                address(mockSubHook)
+            )
         );
         superHook.addSubHook(poolId, address(mockSubHook), 1);
     }
@@ -387,7 +484,11 @@ contract SubHookRegistryRemoveSubHookTest is SubHookRegistryTestBase {
 
     function test_removeSubHook_revertsIfNotRegistered() public {
         vm.expectRevert(
-            abi.encodeWithSelector(SubHookNotRegistered.selector, poolId, address(hookA))
+            abi.encodeWithSelector(
+                SubHookNotRegistered.selector,
+                poolId,
+                address(hookA)
+            )
         );
         superHook.removeSubHook(poolId, address(hookA));
     }
@@ -395,7 +496,9 @@ contract SubHookRegistryRemoveSubHookTest is SubHookRegistryTestBase {
     function test_removeSubHook_revertsIfNotAdmin() public {
         superHook.addSubHook(poolId, address(hookA), 0);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, alice)
+        );
         superHook.removeSubHook(poolId, address(hookA));
     }
 
@@ -483,7 +586,9 @@ contract SubHookRegistryReorderTest is SubHookRegistryTestBase {
         newOrder[0] = address(hookA);
         newOrder[1] = address(hookA); // duplicate
         newOrder[2] = address(hookB);
-        vm.expectRevert(abi.encodeWithSelector(ReorderContainsDuplicates.selector));
+        vm.expectRevert(
+            abi.encodeWithSelector(ReorderContainsDuplicates.selector)
+        );
         superHook.reorderSubHooks(poolId, newOrder);
     }
 
@@ -493,7 +598,9 @@ contract SubHookRegistryReorderTest is SubHookRegistryTestBase {
         newOrder[0] = address(hookA);
         newOrder[1] = address(hookB);
         newOrder[2] = address(stranger); // not registered
-        vm.expectRevert(abi.encodeWithSelector(ReorderContainsDuplicates.selector));
+        vm.expectRevert(
+            abi.encodeWithSelector(ReorderContainsDuplicates.selector)
+        );
         superHook.reorderSubHooks(poolId, newOrder);
     }
 
@@ -503,7 +610,9 @@ contract SubHookRegistryReorderTest is SubHookRegistryTestBase {
         newOrder[1] = address(hookB);
         newOrder[2] = address(hookC);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, alice)
+        );
         superHook.reorderSubHooks(poolId, newOrder);
     }
 
@@ -556,7 +665,11 @@ contract SubHookRegistryReorderTest is SubHookRegistryTestBase {
 
         address[] memory result = superHook.getSubHooks(freshId);
         for (uint256 i; i < length; ++i) {
-            assertEq(result[i], reversed[i], "element at index should match reversed order");
+            assertEq(
+                result[i],
+                reversed[i],
+                "element at index should match reversed order"
+            );
         }
     }
 }
@@ -586,7 +699,9 @@ contract SubHookRegistryAdminTest is SubHookRegistryTestBase {
 
         MockSubHook hook = _deployMockSubHook(manager);
         // address(this) is the old admin — should now be rejected.
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, address(this))
+        );
         superHook.addSubHook(poolId, address(hook), 0);
     }
 
@@ -597,7 +712,9 @@ contract SubHookRegistryAdminTest is SubHookRegistryTestBase {
 
     function test_transferAdmin_revertsIfNotAdmin() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, alice)
+        );
         superHook.transferAdmin(poolId, alice);
     }
 
@@ -614,6 +731,53 @@ contract SubHookRegistryAdminTest is SubHookRegistryTestBase {
         vm.expectEmit(true, true, true, true);
         emit AdminTransferred(poolId, address(this), alice);
         superHook.transferAdmin(poolId, alice);
+    }
+}
+
+contract SubHookRegistryPreparePoolTest is SubHookRegistryTestBase {
+    MockSubHook public hookA;
+    MockSubHook public hookB;
+
+    address[] pendingSubHooks;
+
+    function setUp() public virtual override {
+        super.setUp();
+        hookA = _deployMockSubHook(manager);
+        hookB = _deployMockSubHook(manager);
+
+        pendingSubHooks.push(address(hookA));
+        pendingSubHooks.push(address(hookB));
+
+        superHook.addSubHook(poolId, address(hookA), 0);
+        superHook.addSubHook(poolId, address(hookB), 1);
+    }
+
+    function test_preparePool_noSubHooks() external {
+        vm.expectEmit(true, false, false, false);
+        emit PoolPrepared(poolId);
+        superHook.preparePool(poolKey, ConflictStrategy.FIRST_WINS, address(0));
+    }
+
+    function test_preparePool_addSubHooks() external {
+        vm.expectEmit(true, false, false, false);
+        emit PoolPrepared(poolId);
+        superHook.preparePool(
+            poolKey,
+            ConflictStrategy.FIRST_WINS,
+            address(0),
+            pendingSubHooks
+        );
+    }
+
+    function test_preprarePool_alreadyPrepared() external {
+        superHook.preparePool(poolKey, ConflictStrategy.FIRST_WINS, address(0));
+        vm.expectRevert("SuperHook: already prepared");
+        superHook.preparePool(poolKey, ConflictStrategy.FIRST_WINS, address(0));
+    }
+
+    function test_preparePool_customResolverRequired() external {
+        vm.expectRevert(CustomResolverRequired.selector);
+        superHook.preparePool(poolKey, ConflictStrategy.CUSTOM, address(0));
     }
 }
 
@@ -671,7 +835,11 @@ contract SubHookRegistryLockTest is SubHookRegistryTestBase {
     function test_lockPool_preventsUpdateStrategy() public {
         superHook.lockPool(poolId);
         vm.expectRevert(abi.encodeWithSelector(PoolIsLocked.selector, poolId));
-        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy.LAST_WINS,
+            address(0)
+        );
     }
 
     function test_lockPool_doesNotPreventTransferAdmin() public {
@@ -682,7 +850,9 @@ contract SubHookRegistryLockTest is SubHookRegistryTestBase {
 
     function test_lockPool_revertsIfNotAdmin() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, alice)
+        );
         superHook.lockPool(poolId);
     }
 
@@ -699,7 +869,11 @@ contract SubHookRegistryLockTest is SubHookRegistryTestBase {
 
 contract SubHookRegistryStrategyTest is SubHookRegistryTestBase {
     function test_updateStrategy_toLastWins() public {
-        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy.LAST_WINS,
+            address(0)
+        );
         PoolHookConfig memory config = superHook.getPoolConfig(poolId);
         assertEq(uint256(config.strategy), uint256(ConflictStrategy.LAST_WINS));
     }
@@ -718,49 +892,84 @@ contract SubHookRegistryStrategyTest is SubHookRegistryTestBase {
         assertEq(config.customResolver, resolver);
     }
 
-    function test_updateStrategy_fromCustomBackToFirstWins_clearsResolver() public {
+    function test_updateStrategy_fromCustomBackToFirstWins_clearsResolver()
+        public
+    {
         address resolver = makeAddr("resolver");
         superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, resolver);
 
-        superHook.updateStrategy(poolId, ConflictStrategy.FIRST_WINS, address(0));
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy.FIRST_WINS,
+            address(0)
+        );
         PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint256(config.strategy), uint256(ConflictStrategy.FIRST_WINS));
-        assertEq(config.customResolver, address(0), "resolver should be cleared");
+        assertEq(
+            uint256(config.strategy),
+            uint256(ConflictStrategy.FIRST_WINS)
+        );
+        assertEq(
+            config.customResolver,
+            address(0),
+            "resolver should be cleared"
+        );
     }
 
     function test_updateStrategy_revertsIfCustomWithZeroResolver() public {
-        vm.expectRevert(abi.encodeWithSelector(CustomResolverRequired.selector));
+        vm.expectRevert(
+            abi.encodeWithSelector(CustomResolverRequired.selector)
+        );
         superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, address(0));
     }
 
     function test_updateStrategy_revertsIfNotAdmin() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotAdmin.selector, poolId, alice));
-        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(NotAdmin.selector, poolId, alice)
+        );
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy.LAST_WINS,
+            address(0)
+        );
     }
 
     function test_updateStrategy_revertsIfLocked() public {
         superHook.lockPool(poolId);
         vm.expectRevert(abi.encodeWithSelector(PoolIsLocked.selector, poolId));
-        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy.LAST_WINS,
+            address(0)
+        );
     }
 
     function test_updateStrategy_emitsEvent() public {
         vm.expectEmit(true, true, true, true);
         emit StrategyUpdated(poolId, ConflictStrategy.LAST_WINS, address(0));
-        superHook.updateStrategy(poolId, ConflictStrategy.LAST_WINS, address(0));
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy.LAST_WINS,
+            address(0)
+        );
     }
 
     function test_fuzz_updateStrategy_nonCustom(uint8 rawStrategy) public {
         // Only fuzz over FIRST_WINS (0), LAST_WINS (1), ADDITIVE (2).
         // CUSTOM (3) requires a resolver and is tested separately.
         vm.assume(rawStrategy < 3);
-        superHook.updateStrategy(poolId, ConflictStrategy(rawStrategy), address(0));
+        superHook.updateStrategy(
+            poolId,
+            ConflictStrategy(rawStrategy),
+            address(0)
+        );
         PoolHookConfig memory config = superHook.getPoolConfig(poolId);
         assertEq(uint256(config.strategy), uint256(rawStrategy));
     }
 
-    function test_fuzz_updateStrategy_custom_withResolver(address resolver) public {
+    function test_fuzz_updateStrategy_custom_withResolver(
+        address resolver
+    ) public {
         vm.assume(resolver != address(0));
         superHook.updateStrategy(poolId, ConflictStrategy.CUSTOM, resolver);
         PoolHookConfig memory config = superHook.getPoolConfig(poolId);
@@ -788,7 +997,10 @@ contract SubHookRegistryViewsTest is SubHookRegistryTestBase {
 
     function test_getPoolConfig_returnsDefaultStrategy() public view {
         PoolHookConfig memory config = superHook.getPoolConfig(poolId);
-        assertEq(uint256(config.strategy), uint256(ConflictStrategy.FIRST_WINS));
+        assertEq(
+            uint256(config.strategy),
+            uint256(ConflictStrategy.FIRST_WINS)
+        );
     }
 
     function test_getPoolConfig_returnsUnlockedByDefault() public view {
@@ -853,7 +1065,10 @@ contract SubHookRegistryViewsTest is SubHookRegistryTestBase {
         assertTrue(superHook.isLocked(poolId));
     }
 
-    function test_getPoolConfig_returnsZeroAdminForUnregisteredPool() public view {
+    function test_getPoolConfig_returnsZeroAdminForUnregisteredPool()
+        public
+        view
+    {
         // A pool key that hasn't been initialized — should return empty config.
         PoolKey memory unregistered = PoolKey({
             currency0: currency0,
@@ -862,13 +1077,14 @@ contract SubHookRegistryViewsTest is SubHookRegistryTestBase {
             fee: 500,
             tickSpacing: 10
         });
-        PoolHookConfig memory config = superHook.getPoolConfig(unregistered.toId());
+        PoolHookConfig memory config = superHook.getPoolConfig(
+            unregistered.toId()
+        );
         assertEq(config.admin, address(0));
         assertEq(config.subHooks.length, 0);
         assertFalse(config.locked);
     }
 }
-
 
 // =============================================================================
 // PoolNotRegistered — covers the poolExists modifier revert branch
@@ -876,17 +1092,17 @@ contract SubHookRegistryViewsTest is SubHookRegistryTestBase {
 // =============================================================================
 
 contract SubHookRegistryPoolNotRegisteredTest is SubHookRegistryTestBase {
-
     /// @dev Returns a PoolId for a pool key that has never been initialized,
     ///      so its admin is address(0) and poolExists will revert.
     function _unregisteredId() internal view returns (PoolId) {
-        return PoolKey({
-            currency0:   currency0,
-            currency1:   currency1,
-            hooks:       superHook,
-            fee:         9999,
-            tickSpacing: 200
-        }).toId();
+        return
+            PoolKey({
+                currency0: currency0,
+                currency1: currency1,
+                hooks: superHook,
+                fee: 9999,
+                tickSpacing: 200
+            }).toId();
     }
 
     function test_addSubHook_revertsIfPoolNotRegistered() public {

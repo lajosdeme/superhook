@@ -163,9 +163,6 @@ contract DeploySubHooks is Script {
     ) internal {
         SuperHook superHook = SuperHook(payable(cfg.superHookAddr));
 
-        superHook.removeSubHook(cfg.poolId, 0x6f803E38a5021D8bDea2743686Cb1bf6cb653a80);
-        superHook.removeSubHook(cfg.poolId, 0xD111F6fA33D9561b6b0A8C7dE443f4EEBD44C040);
-
         // Index 0 — GeomeanOracle: observes raw swap state first.
         // Index 1 — PointsHook:   awards points after swap settles.
         superHook.addSubHook(cfg.poolId, geomeanOracle, 0);

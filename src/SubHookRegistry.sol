@@ -35,6 +35,8 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     /// @dev Keyed by PoolId. Consumed atomically in beforeInitialize.
     mapping(PoolId => PendingConfig) internal _pendingConfigs;
 
+    mapping(PoolId => address[]) internal _pendingSubHooks;
+
     // -------------------------------------------------------------------------
     // Modifiers
     // -------------------------------------------------------------------------
@@ -81,6 +83,37 @@ abstract contract SubHookRegistry is ISubHookRegistry {
             strategy: strategy,
             customResolver: customResolver
         });
+
+        emit PoolPrepared(poolId);
+    }
+
+    function preparePool(
+        PoolKey calldata key,
+        ConflictStrategy strategy,
+        address customResolver,
+        address[] calldata subhooks
+    ) external {
+        PoolId poolId = key.toId();
+        require(
+            _pendingConfigs[poolId].admin == address(0),
+            "SuperHook: already prepared"
+        );
+
+        if (
+            strategy == ConflictStrategy.CUSTOM && customResolver == address(0)
+        ) {
+            revert CustomResolverRequired();
+        }
+
+        _pendingConfigs[poolId] = PendingConfig({
+            admin: msg.sender,
+            strategy: strategy,
+            customResolver: customResolver
+        });
+
+        _pendingSubHooks[poolId] = subhooks;
+
+        emit PoolPrepared(poolId);
     }
 
     // -------------------------------------------------------------------------
@@ -140,6 +173,14 @@ abstract contract SubHookRegistry is ISubHookRegistry {
         address subHook,
         uint256 insertIndex
     ) external onlyAdmin(poolId) notLocked(poolId) poolExists(poolId) {
+        _addSubHook(poolId, subHook, insertIndex);
+    }
+
+    function _addSubHook(
+        PoolId poolId,
+        address subHook,
+        uint256 insertIndex
+    ) internal {
         if (subHook == address(0)) revert InvalidSubHookAddress();
         PoolHookConfig storage cfg = _configs[poolId];
 

@@ -123,7 +123,15 @@ contract SuperHook is BaseHook, ConflictResolver {
             ? pending.customResolver
             : address(0);
 
+        if (_pendingSubHooks[poolId].length != 0) {
+            for (uint256 i = 0; i < _pendingSubHooks[poolId].length; i++) {
+                _addSubHook(poolId, _pendingSubHooks[poolId][i], i);
+            }
+        }
+
         delete _pendingConfigs[poolId];
+
+        delete _pendingSubHooks[poolId];
 
         _registerPool(poolId, admin, strategy, customResolver);
 

@@ -113,7 +113,7 @@ contract CreatePool is Script {
     // Config loading
     // -------------------------------------------------------------------------
 
-    function _loadConfig() private returns (Config memory cfg) {
+    function _loadConfig() private view returns (Config memory cfg) {
         cfg.deployerPrivKey = vm.envUint("KEY");
         cfg.deployer        = vm.addr(cfg.deployerPrivKey);
         cfg.superHook       = vm.envAddress("SUPER_HOOK");
