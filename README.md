@@ -4,6 +4,12 @@
 
 **A singleton hook aggregator for Uniswap V4 — compose multiple independent hooks inside a single pool.**
 
+> [!WARNING]
+> **Unaudited Smart Contracts**
+> 
+> This repository contains smart contracts that have **not** been audited. 
+> Do **not** use in production environments until a formal security audit has been completed.
+> 
 ---
 
 ## Overview
