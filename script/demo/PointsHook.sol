@@ -18,7 +18,7 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {BaseHook} from "../../src/external/BaseHook.sol";
-import {BaseSubHook} from "../../src/external/BaseSubHook.sol";
+import {BaseSubHook} from "../../src/base/BaseSubHook.sol";
 
 contract PointsHook is BaseSubHook, ERC1155, Ownable {
     uint256 public pointsMultiplier = 5;

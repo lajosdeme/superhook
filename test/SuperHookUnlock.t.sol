@@ -21,7 +21,7 @@ import {MockSubHook} from "./mocks/MockSubHook.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {HookMiner} from "./HookMiner.sol";
 
-import {BaseSuperHookUnlocker} from "../src/external/BaseSuperHookUnlocker.sol";
+import {BaseSuperHookUnlocker} from "../src/base/BaseSuperHookUnlocker.sol";
 import {ISubHookUnlockCallback} from "../src/interfaces/ISubHookUnlockCallback.sol";
 import {ISuperHookUnlocker} from "../src/interfaces/ISuperHookUnlocker.sol";
 import {UnlockCallbackData} from "../src/types/UnlockCallbackData.sol";

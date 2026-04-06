@@ -19,7 +19,7 @@ import {
     ModifyLiquidityParams,
     SwapParams
 } from "v4-core/types/PoolOperation.sol";
-import {BaseSubHook} from "../../src/external/BaseSubHook.sol";
+import {BaseSubHook} from "../../src/base/BaseSubHook.sol";
 
 /// @title Oracle
 /// @notice Provides price and liquidity data useful for a wide variety of system designs

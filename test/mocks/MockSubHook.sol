@@ -11,7 +11,7 @@ import {
     SwapParams
 } from "v4-core/types/PoolOperation.sol";
 
-import {BaseSubHook} from "../../src/external/BaseSubHook.sol";
+import {BaseSubHook} from "../../src/base/BaseSubHook.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
