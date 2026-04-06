@@ -490,8 +490,6 @@ contract GeomeanOracle is BaseSubHook {
     /// @notice The current observation array state for the given pool ID
     mapping(PoolId => ObservationState) public states;
 
-    IPoolManager immutable poolManager;
-
     /// @notice Returns the observation for the given pool key and observation index
     function getObservation(
         PoolKey calldata key,
@@ -517,8 +515,7 @@ contract GeomeanOracle is BaseSubHook {
     constructor(
         IPoolManager _manager,
         address _superHook
-    ) BaseSubHook(_superHook) {
-        poolManager = _manager;
+    ) BaseSubHook(_superHook, _manager) {
     }
 
     function getHookPermissions()

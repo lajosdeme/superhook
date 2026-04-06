@@ -7,6 +7,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 
 /// @title Base Sub-Hook
 /// @notice abstract contract for sub-hook implementations
@@ -14,15 +15,17 @@ abstract contract BaseSubHook is IHooks {
     error HookNotImplemented();
     error NotSuperHook();
 
-    address immutable superHook;
+    address immutable public superHook;
+    IPoolManager immutable public poolManager;
 
     modifier onlySuperHook() {
         if (msg.sender != superHook) revert NotSuperHook();
         _;
     }
 
-    constructor(address _superHook) {
+    constructor(address _superHook, IPoolManager _poolManager) {
         superHook = _superHook;
+        poolManager = _poolManager;
         validateHookAddress(this);
     }
 

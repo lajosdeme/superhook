@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {ERC1155} from "solmate/src/tokens/ERC1155.sol";
 
-
+import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
@@ -26,7 +26,7 @@ contract PointsHook is BaseSubHook, ERC1155, Ownable {
     constructor(
         address _owner,
         address _superHook
-    ) BaseSubHook(_superHook) Ownable(_owner) {}
+    ) BaseSubHook(_superHook, IPoolManager(address(0))) Ownable(_owner) {}
 
     function getHookPermissions()
         public

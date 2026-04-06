@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {ISubHookUnlockCallback} from "../interfaces/ISubHookUnlockCallback.sol";
 import {ISuperHookUnlocker} from "../interfaces/ISuperHookUnlocker.sol";
@@ -9,7 +10,7 @@ import {BaseSubHook} from "./BaseSubHook.sol";
 abstract contract BaseSuperHookUnlocker is BaseSubHook, ISubHookUnlockCallback {
     error SubHookUnlockCallbackNotImplemented();
 
-    constructor(address _superHook) BaseSubHook(_superHook) {}
+    constructor(address _superHook) BaseSubHook(_superHook, IPoolManager(address(0))) {}
 
     function _unlock(
         PoolId poolId,

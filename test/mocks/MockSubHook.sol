@@ -51,7 +51,7 @@ contract MockSubHook is BaseSubHook {
 
     constructor(
         address _superHook
-    ) BaseSubHook(_superHook) {}
+    ) BaseSubHook(_superHook, IPoolManager(address(0))) {}
 
     function setPermissions(
         bool _beforeInitialize,
