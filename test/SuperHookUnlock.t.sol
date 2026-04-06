@@ -39,7 +39,7 @@ contract MockUnlockSubHook is BaseSuperHookUnlocker {
     uint256 public unlockCallbackCount;
     bytes  public returnPayload;          // configurable return value
 
-    constructor(address _superHook) BaseSuperHookUnlocker(_superHook) {}
+    constructor(address _superHook) BaseSuperHookUnlocker(_superHook, IPoolManager(address(0))) {}
 
     // Make the hook mine-able with any permission mask — we only need
     // beforeSwap for most tests, but the base exposes everything.
@@ -101,7 +101,7 @@ contract MockUnlockSubHook is BaseSuperHookUnlocker {
 /// @dev A sub-hook that does NOT override _subHookUnlockCallback, so calling
 ///      unlock() from it should revert with SubHookUnlockCallbackNotImplemented.
 contract MockUnlockSubHookNoCallback is BaseSuperHookUnlocker {
-    constructor(address _superHook) BaseSuperHookUnlocker(_superHook) {}
+    constructor(address _superHook) BaseSuperHookUnlocker(_superHook, IPoolManager(address(0))) {}
 
     function getHookPermissions()
         public pure override returns (Hooks.Permissions memory)
@@ -140,7 +140,7 @@ contract ExternalAttacker {
 /// @dev Like ExternalAttacker but registered in a *different* pool,
 ///      used to test cross-pool unlock attempts.
 contract CrossPoolAttacker is BaseSuperHookUnlocker {
-    constructor(address _superHook) BaseSuperHookUnlocker(_superHook) {}
+    constructor(address _superHook) BaseSuperHookUnlocker(_superHook, IPoolManager(address(0))) {}
 
     function getHookPermissions()
         public pure override returns (Hooks.Permissions memory)
