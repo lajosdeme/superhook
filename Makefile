@@ -54,7 +54,7 @@ deploy-subhooks:
 	forge script script/04_DeploySubHooks.s.sol:DeploySubHooks --rpc-url $(RPC_URL) --sender $(SENDER) --etherscan-api-key $(API_KEY) --verify --broadcast
 
 test-demo:
-	forge script script/05_DemoSwaps.s.sol:DemoSwaps --rpc-url $(RPC_URL) --sender $(SENDER) --etherscan-api-key $(API_KEY)
+	@forge script script/05_DemoSwaps.s.sol:DemoSwaps --rpc-url $(RPC_URL) --sender $(SENDER) --etherscan-api-key $(API_KEY)
 
 demo:
-	forge script script/05_DemoSwaps.s.sol:DemoSwaps --rpc-url $(RPC_URL) --sender $(SENDER) --etherscan-api-key $(API_KEY) --verify --broadcast
+	@forge script script/05_DemoSwaps.s.sol:DemoSwaps --rpc-url $(RPC_URL) --sender $(SENDER) --etherscan-api-key $(API_KEY) --verify --broadcast

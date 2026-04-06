@@ -5,6 +5,9 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {
+    IUnlockCallback
+} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {
     SwapParams,
     ModifyLiquidityParams
 } from "v4-core/types/PoolOperation.sol";
@@ -24,6 +27,9 @@ import {
     AfterSwapAccumulator,
     LiquidityAccumulator
 } from "./types/Accumulators.sol";
+import {UnlockCallbackData} from "./types/UnlockCallbackData.sol";
+
+import {ISubHookUnlockCallback} from "./interfaces/ISubHookUnlockCallback.sol";
 
 /// @title SuperHook
 /// @notice A singleton V4 hook that acts as an aggregator, allowing multiple
@@ -48,10 +54,12 @@ import {
 ///      Deployment: SuperHook must be deployed via CREATE2 with a salt that
 ///      produces an address where all 14 V4 permission bits are set (ALL_HOOK_MASK).
 ///      Use HookMiner.sol from v4-periphery to find the correct salt offline.
-contract SuperHook is BaseHook, ConflictResolver {
+contract SuperHook is BaseHook, ConflictResolver, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using Hooks for IHooks;
     using BeforeSwapDeltaLibrary for BeforeSwapDelta;
+
+    error UnauthorizedSubHook(PoolId poolId, address subHook);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -472,6 +480,33 @@ contract SuperHook is BaseHook, ConflictResolver {
             BaseHook.afterRemoveLiquidity.selector,
             _toBalanceDelta(resolvedAmount0, resolvedAmount1)
         );
+    }
+
+    // =========================================================================
+    // Unlock callback
+    // =========================================================================
+    function unlock(PoolId poolId, bytes calldata data) external returns (bytes memory) {
+        if (!isRegistered(poolId, msg.sender)) {
+            revert UnauthorizedSubHook(poolId, msg.sender);
+        }
+
+        bytes memory dataEncoded = abi.encode(
+            UnlockCallbackData({
+                poolId: poolId,
+                subHook: msg.sender,
+                data: data
+            })
+        );
+
+        return poolManager.unlock(dataEncoded);
+    }
+
+    function unlockCallback(
+        bytes calldata data
+    ) external override onlyPoolManager returns (bytes memory) {
+        UnlockCallbackData memory dataDecoded = abi.decode(data, (UnlockCallbackData));
+
+        return ISubHookUnlockCallback(dataDecoded.subHook).subHookUnlockCallback(dataDecoded.poolId, dataDecoded.data);
     }
 
     // =========================================================================

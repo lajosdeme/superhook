@@ -339,7 +339,7 @@ abstract contract SubHookRegistry is ISubHookRegistry {
     function isRegistered(
         PoolId poolId,
         address subHook
-    ) external view returns (bool) {
+    ) public view returns (bool) {
         return _findSubHook(_configs[poolId], subHook) != type(uint256).max;
     }
 
