@@ -10,7 +10,7 @@ import {BaseSubHook} from "./BaseSubHook.sol";
 abstract contract BaseSuperHookUnlocker is BaseSubHook, ISubHookUnlockCallback {
     error SubHookUnlockCallbackNotImplemented();
 
-    constructor(address _superHook) BaseSubHook(_superHook, IPoolManager(address(0))) {}
+    constructor(address _superHook, IPoolManager _poolManager) BaseSubHook(_superHook, _poolManager) {}
 
     function _unlock(
         PoolId poolId,
